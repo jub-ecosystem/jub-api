@@ -11,6 +11,7 @@ from ocaapi.db import get_collection
 from ocaapi.services import CatalogsService
 from ocaapi.log.log import Log
 LOG_DEBUG = bool(int(os.environ.get("LOG_DEBUG","1")))
+
 log = Log(
     name=os.environ.get("CATALOGS_LOG_NAME","oca_catalogs"),
     path=os.environ.get("LOG_OUTPUT_PATH","/log"),
@@ -19,13 +20,11 @@ log = Log(
 
 router = APIRouter()
 
-
 def get_service()->CatalogsService:
     collection =  get_collection(name="catalogs")
     repository = CatalogsRepository(collection= collection)
     service = CatalogsService(repository= repository)
     return service
-
 
 
 @router.post("/catalogs")
