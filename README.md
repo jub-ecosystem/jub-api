@@ -17,7 +17,14 @@ OCA is a backend API designed to support catalogs, querying, and data management
 ```
 ## 🧪 Getting Started
 
-### 1. 🔑 Create MongoDB Keyfile
+
+## Deploy MongoDB
+### MongoDB Standalone
+```sh
+docker compose -f ocav1.yml up mongol -d
+```
+### MongoDB Cluster
+#### 1. 🔑 Create MongoDB Keyfile
 You must use the script ```db/createkey.sh``` ⚠️ Please execute this command insde the ```db/``` folder, if you dont execute it in that path, you should move the ```keyfile``` to ```db/```. 
 
 
@@ -25,7 +32,7 @@ You must use the script ```db/createkey.sh``` ⚠️ Please execute this command
 cd db && chmod +x ./createkey.sh && ./createkey.sh
 
 ```
-### 2. ⚙️ Configure MongoDB
+#### 2. ⚙️ Configure MongoDB
 ```conf
 #replication:
 #  replSetName: rs0
@@ -38,13 +45,13 @@ net:
   #authorization: enabled
   #keyFile: /etc/mongo/keyfile
 ```
-### 3. 🐳 Start MongoDB Cluster
+#### 3. 🐳 Start MongoDB Cluster
 
 ```sh
-docker compose -f cluste.yml up -d
+docker compose -f cluster.yml up -d
 ```
 
-### 4. 🧠 Create Admin User
+#### 4. 🧠 Create Admin User
 Enter to the first mongodb node  ⚠️ update the ```<container_id``` with the actual identifier of the container running at 27017:
 
 Find the container running MongoDB on port 27017:
@@ -92,7 +99,7 @@ You should see something like:
   ok: 1
 }
 ```
-### 5. 🔒 Enable Authentication
+#### 5. 🔒 Enable Authentication
 
 
 ```sh
@@ -119,7 +126,7 @@ Restart the cluster:
 docker compose -f cluste.yml up -d
 ```
 
-### 6. 🔐 Test Authentication
+#### 6. 🔐 Test Authentication
 
 Then verify if you can logging try first to get inside the terminal of the mongo db at ```27017``` and in the terminal of the mongo db execute this: 
 
@@ -128,7 +135,14 @@ mongosh -u oca -p d22a75e9e729debc --authenticationDatabase admin
 ```
 you must authenticated correctly. if you cannot authenticated please try again from the step (5)
 
-### 7. 🚀 Start the API Server
+
+## Xolo service: Identity and Access Management (IAM)
+
+```sh
+docker compose -f xolo.yml up -d
+```
+
+## 🚀 Start the API Server
 
 ```
 chmod +x ./run_local.sh && ./run_local.sh

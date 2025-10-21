@@ -1,16 +1,14 @@
 import os
 from motor.motor_asyncio import AsyncIOMotorClient,AsyncIOMotorCollection
+import ocaapi.config as CX
 
-MONGODB_URI = os.environ.get("MONGODB_URI","mongodb://oca:d22a75e9e729debc@localhost:27017/ocadb?authSource=admin")
-# client                   = MongoClient(MONGODB_URI)
-MONGO_DATABASE_NAME      = os.environ.get("MONGO_DATABASE_NAME","ocadb")
-# Initialize MongoClient
-client = None
+
+client              = None
 
 # Get the MongoDB client and database instance
 def get_database():
     global client
-    return  client[MONGO_DATABASE_NAME] if client else None 
+    return  client[CX.OCA_API_MONGODB_DATABASE_NAME] if client else None 
 
 def get_collection(name:str)->AsyncIOMotorCollection:
     db =  get_database()
@@ -18,7 +16,7 @@ def get_collection(name:str)->AsyncIOMotorCollection:
 # Startup event to initialize the MongoClient when the application starts
 async def connect_to_mongo():
     global client
-    client = AsyncIOMotorClient(MONGODB_URI)
+    client = AsyncIOMotorClient(CX.OCA_API_MONGODB_URI)
 
 # Shutdown event to close the MongoClient when the application shuts down
 async def close_mongo_connection():

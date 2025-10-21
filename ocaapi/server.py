@@ -10,14 +10,14 @@ from ocaapi.controllers.v2 import observatory_router_v2,xvariable_router,nameser
 
 
 LOG_DEBUG = bool(int(os.environ.get("LOG_DEBUG","1")))
-log = Log(
-    name=os.environ.get("LOG_NAME","ocapi"),
-    path=os.environ.get("LOG_OUTPUT_PATH","/log"),
-    console_handler_filter= lambda x : LOG_DEBUG
+log       = Log(
+    name                   = os.environ.get("LOG_NAME","ocapi"),
+    path                   = os.environ.get("LOG_OUTPUT_PATH","/log"),
+    console_handler_filter = lambda x : LOG_DEBUG
 )
-title = os.environ.get("OPENAPI_TITLE","OCA - API")
-openapi_version = os.environ.get("OPENAPI_VERSION","0.0.1")
-openapi_summary = os.environ.get("OPENAPI_SUMMARY","This API enable the manipulation of observatories and catalogs")
+title               = os.environ.get("OPENAPI_TITLE","OCA - API")
+openapi_version     = os.environ.get("OPENAPI_VERSION","0.0.1")
+openapi_summary     = os.environ.get("OPENAPI_SUMMARY","This API enable the manipulation of observatories and catalogs")
 openapi_description = os.environ.get("OPENAPI_DESCRIPTION","")
 
 @asynccontextmanager
@@ -55,8 +55,6 @@ def generate_openapi():
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 app.openapi = generate_openapi
-
-
 
 app.include_router(observatories_router)
 app.include_router(catalogs_router)
