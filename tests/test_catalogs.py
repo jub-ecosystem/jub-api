@@ -1,9 +1,9 @@
 import pytest
-from ocaapi.repositories.catalog import CatalogsRepository
-from ocaapi.dto.catalog import CatalogDTO,CatalogItemDTO
-from ocaapi.services import CatalogsService
-from ocaapi.models import Catalog,CatalogKind
-from ocaapi.db import get_collection,connect_to_mongo
+from jubapi.repositories.catalog import CatalogsRepository
+from jubapi.dto.catalog import CatalogDTO,CatalogItemDTO
+from jubapi.services import CatalogsService
+from jubapi.models import Catalog,CatalogKind
+from jubapi.db import get_collection,connect_to_mongo
 import requests as R
 import requests as R
 

@@ -1,13 +1,13 @@
 import pytest
 
-from ocaapi.repositories.observatory import ObservatoriesRepository
-from ocaapi.repositories.products import ProductsRepository
-from ocaapi.repositories.catalog import CatalogsRepository
-from ocaapi.services import ProductsService,ObservatoriesService,CatalogsService
-from ocaapi.models import Observatory,Product,CatalogKind,Level
-from ocaapi.dto import ProductFilter
-from ocaapi.dto.product import ProductDTO,LevelDTO
-from ocaapi.db import get_collection,connect_to_mongo
+from jubapi.repositories.observatory import ObservatoriesRepository
+from jubapi.repositories.products import ProductsRepository
+from jubapi.repositories.catalog import CatalogsRepository
+from jubapi.services import ProductsService,ObservatoriesService,CatalogsService
+from jubapi.models import Observatory,Product,CatalogKind,Level
+from jubapi.dto import ProductFilter
+from jubapi.dto.product import ProductDTO,LevelDTO
+from jubapi.db import get_collection,connect_to_mongo
 import requests as R
 
 @pytest.fixture

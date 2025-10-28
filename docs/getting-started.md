@@ -63,7 +63,7 @@ To deploy the server execute the ```run_local.sh``` bash script:
 Or you can run the ```uvicorn``` command:
 
 ```bash
-uvicorn ocaapi.server:app --host ${OCA_HOST-0.0.0.0} --port ${OCA_PORT-5000} --reload
+uvicorn jubapi.server:app --host ${OCA_HOST-0.0.0.0} --port ${OCA_PORT-5000} --reload
 ```
 
 The default port is ```5000```, you can change it directly on the command or update the environment variable ```OCA_PORT```. 

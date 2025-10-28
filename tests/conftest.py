@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 
-from ocaapi.db import get_collection,connect_to_mongo,close_mongo_connection
+from jubapi.db import get_collection,connect_to_mongo,close_mongo_connection
 
 @pytest.fixture(scope="session")
 def event_loop():

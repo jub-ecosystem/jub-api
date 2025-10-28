@@ -1,9 +1,9 @@
 import pytest
-from ocaapi.repositories.observatory import ObservatoriesRepository
-from ocaapi.dto.observatory import ObservatoryDTO,LevelCatalogDTO
-from ocaapi.services import ObservatoriesService
-from ocaapi.models import Observatory
-from ocaapi.db import get_collection,connect_to_mongo
+from jubapi.repositories.observatory import ObservatoriesRepository
+from jubapi.dto.observatory import ObservatoryDTO,LevelCatalogDTO
+from jubapi.services import ObservatoriesService
+from jubapi.models import Observatory
+from jubapi.db import get_collection,connect_to_mongo
 import requests as R
 import requests as R
 

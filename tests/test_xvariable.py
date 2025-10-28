@@ -1,10 +1,10 @@
 import pytest
 from typing import List
-from ocaapi.repositories.v2 import XVariablesRepository,XVariableAssignmentRepository,XVariableParentRelationshipRepository
-from ocaapi.dto.v2 import XVariableDTO,MultipleXVariableAssignmentDTO,ManyProductsMultipleXVariableAssignmentDTO,XVariableRawAssignmentDTO
-from ocaapi.services.v2 import XVariablesService,XVariableAssignmentsService,XVariableParentRelationshipService
-from ocaapi.models.v2 import XVariableModel,XVariableAssignment,XVariableType,XType
-from ocaapi.db import get_collection,connect_to_mongo
+from jubapi.repositories.v2 import XVariablesRepository,XVariableAssignmentRepository,XVariableParentRelationshipRepository
+from jubapi.dto.v2 import XVariableDTO,MultipleXVariableAssignmentDTO,ManyProductsMultipleXVariableAssignmentDTO,XVariableRawAssignmentDTO
+from jubapi.services.v2 import XVariablesService,XVariableAssignmentsService,XVariableParentRelationshipService
+from jubapi.models.v2 import XVariableModel,XVariableAssignment,XVariableType,XType
+from jubapi.db import get_collection,connect_to_mongo
 import requests as R
 import json as J
 import datetime

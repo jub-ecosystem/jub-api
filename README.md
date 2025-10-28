@@ -4,7 +4,7 @@ OCA is a backend API designed to support catalogs, querying, and data management
 
 ## 📦 Project Structure
 ```
-├── ocaapi/ # FastAPI server with controller/service/repository structure
+├── jubapi/ # FastAPI server with controller/service/repository structure
 
 ├── db/ # MongoDB cluster config, scripts, keyfile
 ├── docs/ # Markdown documentation (arch, model, etc.)
@@ -17,9 +17,8 @@ OCA is a backend API designed to support catalogs, querying, and data management
 ```
 ## 🧪 Getting Started
 
-
-## Deploy MongoDB
-### MongoDB Standalone
+### Deploy MongoDB
+#### MongoDB Standalone
 ```sh
 docker compose -f ocav1.yml up mongol -d
 ```

@@ -1,5 +1,5 @@
 
-import  ocaapi.querylang as qlx
+import  jubapi.querylang as qlx
 import pytest
 
 @pytest.mark.skip("")

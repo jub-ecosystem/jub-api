@@ -1,10 +1,10 @@
 import pytest
-from ocaapi.repositories.v2 import ProductRepository,XVariablesRepository,XVariableAssignmentRepository,XVariableParentRelationshipRepository
-from ocaapi.dto.v2 import ProductDTO
-from ocaapi.querylang.dto import ProductCreationDTO,ContentVarsDTO,ContextualVariablesDTO,PlotDescriptionDTO
-from ocaapi.services.v2 import ProductsService,XVariableParentRelationshipService,XVariablesService
-from ocaapi.models.v2 import ProductModel
-from ocaapi.db import get_collection,connect_to_mongo
+from jubapi.repositories.v2 import ProductRepository,XVariablesRepository,XVariableAssignmentRepository,XVariableParentRelationshipRepository
+from jubapi.dto.v2 import ProductDTO
+from jubapi.querylang.dto import ProductCreationDTO,ContentVarsDTO,ContextualVariablesDTO,PlotDescriptionDTO
+from jubapi.services.v2 import ProductsService,XVariableParentRelationshipService,XVariablesService
+from jubapi.models.v2 import ProductModel
+from jubapi.db import get_collection,connect_to_mongo
 import requests as R
 
 @pytest.fixture
