@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "ocaapi"
+name = "jubapi"
 version = "0.1.0"
 description = ""
 authors = ["Ignacio Castillo <ignacio.bcastillo@gmail.com>"]

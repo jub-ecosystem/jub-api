@@ -32,7 +32,7 @@ An <b>Observatory</b> in the QLX model acts as a workspace or context where a us
         <li>A set of products: Products in an observatory match combinations of Xvars from the selected catalogs.</li>
     </ol>
 This concept allows the UI to dynamically adapt to the observatory’s context, only showing products and filters (Xvars) relevant to that particular observatory. Users can select different observatories to quickly shift between different data views, each defined by distinct catalogs and associated products.
-<!-- OCAAPI is a RESTful API designed to support querying and management of data using the QLX model. The API enables clients to interact with products and variables (Xvars), utilizing flexible, multi-dimensional queries. This document provides an overview of the API structure, functionality, and key components. -->
+<!-- jubapi is a RESTful API designed to support querying and management of data using the QLX model. The API enables clients to interact with products and variables (Xvars), utilizing flexible, multi-dimensional queries. This document provides an overview of the API structure, functionality, and key components. -->
 
 ### Catalog
 

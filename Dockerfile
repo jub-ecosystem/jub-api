@@ -18,14 +18,15 @@ RUN pip install poetry
 RUN pip install --no-cache-dir uvicorn
 
 # Copy only the pyproject.toml and poetry.lock first (for caching)
-COPY pyproject.toml poetry.lock* /app/
+COPY pyproject.toml poetry.lock* README.md /app/
 
+
+# Copy the rest of the project files
+COPY jubapi /app/jubapi
 
 # Install Python dependencies using Poetry
 RUN poetry config virtualenvs.create false
 RUN poetry lock
 RUN poetry install --no-interaction --no-ansi
-RUN poetry install --no-interaction --no-ansi
+# RUN poetry install --no-interaction --no-ansi
 
-# Copy the rest of the project files
-COPY . /app

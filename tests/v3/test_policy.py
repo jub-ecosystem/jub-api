@@ -1,4 +1,4 @@
-from ocaapi.policy import PolicyManager
+from jubapi.policy import PolicyManager
 
 def test_policy():
     pm = PolicyManager()

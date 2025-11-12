@@ -1,21 +1,30 @@
 services:
-  oca-api:
-    image: nachocode/oca:api-alpha.1
-    ports:
-      - "5000:5000" # Map the host port to the container port
-    environment:
-      - OCA_API_HOST=${OCAA_API_HOST:-0.0.0.0}   # Host environment variable
-      - OCA_API_PORT=${OCA_API_PORT:-5000}   # Port environment variable
-      - ACCESS_TOKEN_EXPIRE_MINUTES=30  # Token expiration time (in minutes)
-    command: >
-      uvicorn ocaapi.server:app 
-      --host ${OCA_API_HOST:-0.0.0.0} 
-      --port ${OCA_API_PORT:-5000} 
-      --log-level debug
-    networks:
-     - oca
+ jub-db:
+  image: mongo:6-jammy
+  ports:
+    - ${JUB_MONGODB_PORT:-27027}:27017
+  volumes:
+    - jub-db:/data/db
+  networks:
+    - jub
+  restart: unless-stopped
+  
+ jub:
+  build:
+    context: .
+    dockerfile: ${JUB_DOCKERFILE:-Dockerfile}
+  image: ${JUB_IMAGE_NAME:-jub:api-0.0.1a0}
+  env_file:
+    - .env.dev
+  ports:
+    - 5000:5000
+  networks:
+    - jub
+  command: uvicorn jubapi.server:app --host ${JUB_HOST:-0.0.0.0} --port ${JUB_PORT:-5000} --reload
+  # volumes:
+    # - "/log:/log"
 
- 
 networks:
-  oca:
-
+  jub:
+volumes:
+  jub-db:
