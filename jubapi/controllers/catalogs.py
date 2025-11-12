@@ -18,16 +18,16 @@ log = Log(
     console_handler_filter= lambda x : LOG_DEBUG
 )
 
-router = APIRouter()
+router = APIRouter(prefix="/catalogs", tags=["catalogs"])
 
 def get_service()->CatalogsService:
-    collection =  get_collection(name="catalogs")
+    collection = get_collection(name="catalogs")
     repository = CatalogsRepository(collection= collection)
-    service = CatalogsService(repository= repository)
+    service    = CatalogsService(repository= repository)
     return service
 
 
-@router.post("/catalogs")
+@router.post("/")
 async def create_catalogs(
     catalog:CatalogDTO, 
     catalog_service:CatalogsService= Depends(get_service) 
@@ -60,7 +60,7 @@ async def create_catalogs(
     return { "cid": catalog.cid}
 
 
-@router.delete("/catalogs/{cid}")
+@router.delete("/{cid}")
 async def delete_catalogs(cid:str, catalog_service:CatalogsService= Depends(get_service)):
     exists = await catalog_service.find_by_cid(cid=cid)
     if  exists.is_err:
@@ -69,14 +69,14 @@ async def delete_catalogs(cid:str, catalog_service:CatalogsService= Depends(get_
         response =await catalog_service.delete_by_cid(cid=cid)
         return Response(content=None, status_code=204)
 
-@router.get("/catalogs")
+@router.get("/")
 async def get_catalogs(skip:int = 0, limit:int = 10, catalog_service:CatalogsService= Depends(get_service)):
     result= await catalog_service.find_all(skip=skip,limit=limit)
     if result.is_ok:
         return result.unwrap_or([])
     raise HTTPException(status_code=500, detail=str(result.unwrap_err()))
 
-@router.get("/catalogs/{cid}")
+@router.get("/{cid}")
 async def get_catalogs_by_key(cid:str, catalog_service:CatalogsService= Depends(get_service)):
     catalog       =await catalog_service.find_by_cid(cid=cid)
     print(catalog)

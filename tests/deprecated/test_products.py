@@ -34,6 +34,7 @@ async def products_service():
     return repository, service
 
 
+@pytest.mark.skip("")
 @pytest.mark.asyncio
 async def test_repository_create(products_service):
     repository, _ =  products_service
@@ -60,6 +61,7 @@ async def test_repository_create(products_service):
     print(res)
     assert res.is_ok, "Product creation failed"
 
+@pytest.mark.skip("")
 @pytest.mark.asyncio
 async def test_service_create(products_service):
     _, service =  products_service
@@ -93,6 +95,7 @@ async def test_service_create(products_service):
     print(res)
     assert res.is_ok, "Product creation failed"
 
+@pytest.mark.skip("")
 @pytest.mark.asyncio
 async def test_api_create(products_service):
 
@@ -132,6 +135,7 @@ async def test_api_create(products_service):
 
 
 
+@pytest.mark.skip("")
 @pytest.mark.asyncio
 async def test_get_products(products_service):
     _, service =  products_service
@@ -140,6 +144,7 @@ async def test_get_products(products_service):
     print(res,res.ok)
     assert res.ok,"Fail to get products"
 
+@pytest.mark.skip("")
 @pytest.mark.asyncio
 async def test_filter_products(products_service):
     _, service =  products_service

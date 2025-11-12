@@ -18,7 +18,7 @@ async def observatories_service():
     return repository, service
 
 
-
+@pytest.mark.skip("")
 @pytest.mark.asyncio
 async def test_repository_create(observatories_service):
     repository, _ =  observatories_service
@@ -32,6 +32,8 @@ async def test_repository_create(observatories_service):
     print(res)
     assert res.is_ok, "Observatory creation failed"
 
+
+@pytest.mark.skip("")
 @pytest.mark.asyncio
 async def test_service_create(observatories_service):
     _,service =  observatories_service

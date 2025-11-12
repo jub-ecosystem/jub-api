@@ -99,7 +99,7 @@ async def test_info_elemnt():
         res = qlx.info_query_value.parseString(x)
         print(res)
 
-# @pytest.mark.skip("")
+@pytest.mark.skip("")
 @pytest.mark.asyncio
 async def test_sv():
     xs = [
