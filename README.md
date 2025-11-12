@@ -11,16 +11,28 @@ OCA is a backend API designed to support catalogs, querying, and data management
 ├── tests/ # Pytest test suite
 ├── docker-compose.yml # OCA API definition
 ├── cluster.yml # MongoDB cluster definition
+├── deploy.sh # Script for full deployment
 ├── run_local.sh # Script to launch local dev server
 ├── pyproject.toml # Poetry project file
 └── mkdocs.yml # MkDocs configuration for documentation
 ```
 ## 🧪 Getting Started
 
-### Deploy MongoDB
-#### MongoDB Standalone
+### Prerequisites: Development Environment Setup
+
+Before running the project, install dependencies and activate the development environment:
+
 ```sh
-docker compose -f ocav1.yml up mongol -d
+poetry install && poetry lock
+poetry shell
+```
+
+### Full Deployment
+
+To deploy all services required for the system to function properly:
+
+```sh
+chmod +x ./deploy.sh && ./deploy.sh
 ```
 ### MongoDB Cluster
 #### 1. 🔑 Create MongoDB Keyfile
@@ -102,7 +114,7 @@ You should see something like:
 
 
 ```sh
-docker compose -f cluste.yml down
+docker compose -f cluster.yml down
 ```
 
 Then you must mofidy the ```db/oca-db-0.conf``` and enable only security like this:
@@ -122,7 +134,7 @@ security:
 
 Restart the cluster:
 ```sh
-docker compose -f cluste.yml up -d
+docker compose -f cluster.yml up -d
 ```
 
 #### 6. 🔐 Test Authentication
@@ -133,13 +145,6 @@ Then verify if you can logging try first to get inside the terminal of the mongo
 mongosh -u oca -p d22a75e9e729debc --authenticationDatabase admin
 ```
 you must authenticated correctly. if you cannot authenticated please try again from the step (5)
-
-
-## Xolo service: Identity and Access Management (IAM)
-
-```sh
-docker compose -f xolo.yml up -d
-```
 
 ## 🚀 Start the API Server
 
