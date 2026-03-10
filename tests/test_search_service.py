@@ -13,7 +13,7 @@ from jubapi.db import CollectionNames
 async def db():
     """Provides a clean test database."""
     client = MongoClient("mongodb://localhost:27027/")
-    db = client.jub
+    db = client.jub_test
     yield db
     # await client.drop_database('jub_test')
 
@@ -46,8 +46,7 @@ async def services(db):
         catalog_item_catalog_alias_link_repository = link_manager.catalog_item_catalog_alias_link_repository,
         observatory_catalog_link_repository        = link_manager.observatory_catalog_link_repository,
         catalog_catalog_item_link_repository= link_manager.catalog_catalog_item_link_repository,
-        observatory_repository= observatory_repository
-
+        observatory_repository = observatory_repository
 
     )
 
@@ -76,14 +75,35 @@ async def seed_database_2(services):
     existing_prod = await prod_srv.get_product_by_id("p_01")
     if existing_prod.is_ok:
         return
+    
+
+
     # ==========================================
     # 0. SETUP OBSERVATORIES & ASSIGN CATALOGS
     # ==========================================
     # We create 10 observatories and link the 5 catalogs to all of them
+    # catalogs_to_link = ["cat_spatial", "cat_time", "cat_sex", "cat_cie10", "cat_plot"]
+    # ==========================================
+    # 0.A SETUP THE ROOT CATALOGS
+    # ==========================================
+    catalogs_to_create = [
+        M.CatalogX(catalog_id="cat_spatial",value="SPATIAL",catalog_type=M.CatalogType.SPATIAL, name="Spatial Catalog", description="Geographic dimensions"),
+        M.CatalogX(catalog_id="cat_time",value="TEMPORAL",catalog_type=M.CatalogType.TEMPORAL, name="Temporal Catalog", description="Time dimensions"),
+        M.CatalogX(catalog_id="cat_sex",value="SEX",catalog_type= M.CatalogType.INTEREST, name="Sex Catalog", description="Biological sex variables"),
+        M.CatalogX(catalog_id="cat_cie10",value="CIE10",catalog_type=M.CatalogType.INTEREST, name="CIE-10 Catalog", description="Medical diagnoses"),
+        M.CatalogX(catalog_id="cat_plot",value="PLOT_TYPE",catalog_type=M.CatalogType.INTEREST, name="Plot Type Catalog", description="Visualization types")
+    ]
     catalogs_to_link = ["cat_spatial", "cat_time", "cat_sex", "cat_cie10", "cat_plot"]
+    for cat in catalogs_to_create:
+        # Assumes your service has a create method for the root CatalogX entity
+        await cat_srv.create_catalog(cat)
     
     for i in range(1, 11):
         obs_id = f"obs_{i}"
+        # 1. Explicitly create the Observatory entity
+        await observatory_srv.create_observatory(
+            M.ObservatoryX(observatory_id=obs_id, title=f"Observatory {i}", description=f"Test Obs {i}")
+        )
         for priority, cat_id in enumerate(catalogs_to_link):
             await observatory_srv.add_catalog(obs_id, cat_id, priority)
 
@@ -218,198 +238,55 @@ async def seed_database_2(services):
                 description=""
             ), parent_id=parent_cat)
 
-# ==========================================
-    # 4. SEED PRODUCTS
     # ==========================================
-    # Let's seed some highly specific products to test intersections.
+    # 4. SEED PRODUCTS (100 Total: 10 per Observatory)
+    # ==========================================
     
-    # Obs 1: Breast Cancer in Tamaulipas (Line Plot over time)
-    await prod_srv.insert_product(M.ProductX(product_id="p_01", name="Breast Cancer TAM Line", description=""), "obs_1", ["TAM", "FEMALE", "Y2026", "C50_1", "LINE"])
-    
-    # Obs 2: Diabetes in Monterrey, NL (Bar Chart)
-    await prod_srv.insert_product(M.ProductX(product_id="p_02", name="Diabetes Monterrey Bar", description=""), "obs_2", ["NL_MON", "MALE", "Y2025", "E11_2", "BAR"])
-    
-    # Obs 3: General Hypertension in Mexico (Pie Chart)
-    # Note: Tagged with the category root "I10"
-    await prod_srv.insert_product(M.ProductX(product_id="p_03", name="Hypertension MX General", description=""), "obs_3", ["MX", "FEMALE", "Y2020", "I10", "PIE"])
-    
-    # Obs 4: Lung Cancer in Victoria, TAM (Heatmap spanning multiple years)
-    await prod_srv.insert_product(M.ProductX(product_id="p_04", name="Lung Cancer Victoria Multi-year", description=""), "obs_4", ["TAM_VIC", "MALE", "Y2015", "Y2016", "Y2017", "C34_1", "HEATMAP"])
-    
-    # Obs 5: Breast cancer across entire country (Scatter)
-    await prod_srv.insert_product(M.ProductX(product_id="p_05", name="Breast Cancer MX Scatter", description=""), "obs_5", ["MX", "FEMALE", "Y2024", "C50_2", "SCATTER"])
-    
-    # Obs 6: Hypertension in CDMX (Line Chart)
-    await prod_srv.insert_product(M.ProductX(product_id="p_06", name="Hypertension CDMX Coyoacan", description=""), "obs_6", ["CDMX_COY", "MALE", "Y2023", "I10_1", "LINE"])
+    # Define the pools of valid item IDs we just seeded
+    spatial_pool = ["MX", "TAM", "TAM_VIC", "NL_MON", "CDMX_COY", "JAL", "YUC", "PUE", "GTO", "CHIH"]
+    time_pool    = [f"Y{year}" for year in range(2000, 2027)]
+    sex_pool     = ["FEMALE", "MALE"]
+    cie10_pool   = ["C50_1", "C50_2", "C50_3", "C34_1", "C34_2", "E11_1", "E11_2", "I10_1", "I10_2", "I10_3"]
+    plot_pool    = ["LINE", "BAR", "PIE", "SCATTER", "HEATMAP"]
 
-    # Obs 7 to 10: Just filling in with some mixed data for query testing
-    await prod_srv.insert_product(M.ProductX(product_id="p_07", name="Diabetes JAL Multi-sex", description=""), "obs_7", ["JAL", "MALE", "FEMALE", "Y2022", "E11_1", "BAR"])
-    await prod_srv.insert_product(M.ProductX(product_id="p_08", name="Lung Cancer YUC", description=""), "obs_8", ["YUC", "FEMALE", "Y2021", "C34_2", "PIE"])
-    await prod_srv.insert_product(M.ProductX(product_id="p_09", name="Hypertension PUE", description=""), "obs_9", ["PUE", "MALE", "Y2010", "I10_3", "HEATMAP"])
-    await prod_srv.insert_product(M.ProductX(product_id="p_10", name="Breast Cancer GTO", description=""), "obs_10", ["GTO", "FEMALE", "Y2005", "C50_3", "LINE"])
+    product_counter = 0
 
-@pytest.fixture(autouse=True)
-async def seed_database(services):
-    """Seeds the database before the tests run."""
-    cat_srv:S.CatalogService = services["catalog"]
-    prod_srv: S.ProductService = services["product"]
-    observatory_srv: S.ObservatoriesService = services["observatory"]
-    
-    # 1. Seed Temporal Catalog Items (The key to making time work in the graph)
-    # The 'value' field must be a sortable string (like ISO dates or year strings)
-    # so the math operators (>, <, >=) work natively in MongoDB.
-    # await services[""]
-    exiting_product = await prod_srv.get_product_by_id("p1")
-    if exiting_product.is_ok:
-        return
-    await observatory_srv.add_catalog("obs_test", "cat_spatial", 0)
-    await observatory_srv.add_catalog("obs_test", "cat_time", 1)
-
-    await cat_srv.add_item_to_catalog("cat_time", M.CatalogItemX(
-        catalog_item_id = "Y2020",
-        name            = "2020",
-        value           = "2020",
-        code            = 2020,
-        temporal_value  = "2020-01-01T00:00:00Z",
-        value_type      = M.CatalogItemValueType.DATETIME,
-        description     = ""
-    ))
-    await cat_srv.add_item_to_catalog(
-        "cat_time", 
-        M.CatalogItemX(
-            catalog_item_id = "Y2023",
-            name            = "2023",
-            value           = "2023",
-            temporal_value  = "2023-01-01T00:00:00Z",
-            code            = 2023,
-            value_type      = M.CatalogItemValueType.DATETIME,
-            description     = ""
-        )
-    )
-    await cat_srv.add_item_to_catalog(
-        "cat_time", 
-        M.CatalogItemX(
-            catalog_item_id = "Y2024",
-            name            = "2024",
-            value           = "2024",
-            temporal_value  = "2024-01-01T00:00:00Z",
-            code            = 2024,
-            value_type      = M.CatalogItemValueType.DATETIME,
-            description     = ""
-        )
-    )
-    await cat_srv.add_item_to_catalog(
-        "cat_time", 
-        M.CatalogItemX(
-            catalog_item_id = "Y2025",
-            name            = "2025",
-            value           = "2025",
-            temporal_value  = "2025-01-01T00:00:00Z",
-            code            = 2025,
-            value_type      = M.CatalogItemValueType.DATETIME,
-            description     = ""
-        )
-    )
-
-    # 2. Seed Spatial & Interest Items (Simplified for tests)
-    await cat_srv.add_item_to_catalog("cat_spatial", M.CatalogItemX(catalog_item_id="TAM", name="Tamaulipas", value="TAM", code=1, value_type="STRING", description=""))
-    await cat_srv.add_item_to_catalog("cat_spatial", M.CatalogItemX(catalog_item_id="VIC", name="Victoria", value="VIC", code=2, value_type="STRING", description=""), parent_id="TAM")
-    await cat_srv.add_item_to_catalog("cat_spatial", M.CatalogItemX(catalog_item_id="SLP", name="San Luis Potosi", value="SLP", code=3, value_type="STRING", description=""))
-    
-    await cat_srv.add_item_to_catalog("cat_sex", M.CatalogItemX(catalog_item_id="FEMALE", name="Female", value="FEMALE", code=1, value_type="STRING", description=""))
-    await cat_srv.add_item_to_catalog("cat_sex", M.CatalogItemX(catalog_item_id="MALE", name="Male", value="MALE", code=2, value_type="STRING", description=""))
-
-    # 3. Seed Products
-    # Product 1: Victoria, Female, 2024
-    await prod_srv.insert_product(M.ProductX(product_id="p1", name="VIC_FEM_2024", description=""), "obs_test", ["VIC", "FEMALE", "Y2024"])
-    
-    # Product 2: Tamaulipas (State), Male, 2023
-    await prod_srv.insert_product(M.ProductX(product_id="p2", name="TAM_MALE_2023", description=""), "obs_test", ["TAM", "MALE", "Y2023"])
-    
-    # Product 3: Disjointed Dates! SLP, Female, covers both 2020 AND 2025
-    await prod_srv.insert_product(M.ProductX(product_id="p3", name="SLP_FEM_MULTI_DATE", description=""), "obs_test", ["SLP", "FEMALE", "Y2020", "Y2025"])
-
+    for obs_idx in range(1, 11):
+        obs_id = f"obs_{obs_idx}"
+        
+        for prod_idx in range(1, 11):
+            product_counter += 1
+            p_id = f"p_{obs_idx:02d}_{prod_idx:02d}" # e.g., p_01_01, p_01_02... p_10_10
+            
+            # Use modulo to deterministically cycle through the pools so we get a good mix of data
+            sp_tag = spatial_pool[product_counter % len(spatial_pool)]
+            tm_tag = time_pool[product_counter % len(time_pool)]
+            sx_tag = sex_pool[product_counter % len(sex_pool)]
+            ci_tag = cie10_pool[product_counter % len(cie10_pool)]
+            pl_tag = plot_pool[product_counter % len(plot_pool)]
+            
+            tags = [sp_tag, sx_tag, tm_tag, ci_tag, pl_tag]
+            
+            # Create a descriptive name so it's easy to read during test debugging
+            prod_name = f"Data {p_id} - {sp_tag} {ci_tag} {tm_tag}"
+            
+            res = await prod_srv.insert_product(
+                M.ProductX(product_id=p_id, name=prod_name, description="Autogenerated test product"), 
+                obs_id, 
+                tags
+            )
+            assert res.is_ok, f"Failed to insert product {p_id}: {res.error}"
 
 @pytest.mark.asyncio
-async def test_vs_spatial_hierarchy(services):
-    search_srv:S.SearchService = services["search"]
-    
-    # Query: Anything inside Tamaulipas
-    res = await search_srv.execute_query("jub.v1.VS(TAM.*)", "obs_test")
-    
-    assert res.is_ok
-    products = [p.product_id for p in res.unwrap()]
-    
-    # Should find p1 (VIC is inside TAM) and p2 (Tagged directly with TAM)
-    assert "p1" in products
-    assert "p2" in products
-    assert "p3" not in products # SLP is not inside TAM
+async def test_search_observatories(services):
+    search_service:S.SearchService = services["search"]
+    query  = "jub.v1.VS(MX.TAM).VT(>=2000 AND <=2026).VI(SEX.MALE AND CIE10.E11.2 AND PLOT_TYPE.BAR)"
+    result = await search_service.search_observatories(query=query)
+    assert result.is_ok
 
 @pytest.mark.asyncio
-async def test_vt_exact_time(services):
-    search_srv: S.SearchService = services["search"]
-    
-    # Query: Exactly 2024
-    res = await search_srv.execute_query("jub.v1.VT(2024)", "obs_test")
-    
-    assert res.is_ok
-    products = [p.product_id for p in res.unwrap()]
-    assert "p1" in products # p1 is 2024
-    assert "p2" not in products
-    assert "p3" not in products
-
-@pytest.mark.asyncio
-async def test_vt_math_operator_greater_than(services):
-    search_srv = services["search"]
-    
-    # Query: Any time strictly greater than 2023
-    # The code maps '>' to '$gt' and searches the CatalogItem 'value' field.
-    # It will find IDs ['Y2024', 'Y2025'].
-    res = await search_srv.execute_query("jub.v1.VT(> 2023)", "obs_test")
-    
-    assert res.is_ok
-    products = [p.product_id for p in res.unwrap()]
-    assert "p1" in products # p1 has Y2024
-    assert "p3" in products # p3 has Y2025
-    assert "p2" not in products # p2 is exactly 2023 (not >)
-
-@pytest.mark.asyncio
-async def test_vt_multi_date_product(services):
-    search_srv = services["search"]
-    
-    # Query: Exactly 2020
-    # Proves we can find products that have disjointed dates
-    res = await search_srv.execute_query("jub.v1.VT(2020)", "obs_test")
-    
-    assert res.is_ok
-    products = [p.product_id for p in res.unwrap()]
-    assert products == ["p3"] # p3 is tagged with both Y2020 and Y2025
-
-@pytest.mark.asyncio
-async def test_vt_math_operator_range(services):
-    search_srv:S.SearchService = services["search"]
-    
-    # Query: Time between 2021 and 2024 inclusive
-    res = await search_srv.execute_query("jub.v1.VT(>= 2021 AND <= 2024)", "obs_test")
-    
-    assert res.is_ok
-    products = [p.product_id for p in res.unwrap()]
-    print(f"Products found in range query: {products}")
-    assert "p1" in products # 2024
-    assert "p2" in products # 2023
-    assert "p3" not in products # 2020 is too early, 2025 is too late
-
-@pytest.mark.asyncio
-async def test_complex_combination(services):
-    search_srv = services["search"]
-    
-    # Query: Female AND (inside Tamaulipas) AND (after 2023)
-    query_str = "jub.v1.VS(TAM.*).VI(FEMALE).VT(> 2023)"
-    res = await search_srv.execute_query(query_str, "obs_test")
-    
-    assert res.is_ok
-    products = [p.product_id for p in res.unwrap()]
-    
-    # Only p1 matches all three conditions
-    assert len(products) == 1
-    assert "p1" in products
+async def test_search_products(services):
+    search_service:S.SearchService = services["search"]
+    query  = "jub.v1.VT(>=2000 AND <=2026).VI(PLOT_TYPE.BAR)"
+    result = await search_service.search(query=query)
+    assert result.is_ok

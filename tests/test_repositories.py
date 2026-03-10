@@ -1,7 +1,8 @@
 import pytest
 from motor.motor_asyncio import AsyncIOMotorClient as MongoClient
-import jubapi.repositories.v2 as RV4
-import jubapi.models.v2 as MV4
+import jubapi.repositories.v2 as R
+import jubapi.services.v2 as S
+import jubapi.models.v2 as M
 from jubapi.db import CollectionNames
 
 @pytest.fixture(scope="function")
@@ -23,19 +24,19 @@ async def test_db():
 def repos(test_db):
     """Provides initialized repositories for the tests."""
     
-    obs_prod_links_repo = RV4.ObservatoryToProductLinkRepository(test_db[CollectionNames.OBSERVATORY_PRODUCT_LINKS.value])
-    obs_cat_links_repo = RV4.ObservatoryToCatalogLinkRepository(test_db[CollectionNames.OBSERVATORY_CATALOG_LINKS.value])
-    cat_item_links_repo = RV4.CatalogToCatalogItemLinkRepository(test_db[CollectionNames.CATALOG_CATALOG_ITEM_LINKS.value])
-    prod_cat_item_links_repo = RV4.ProductToCatalogItemLinkRepository(test_db[CollectionNames.PRODUCT_CATALOGS_ITEM_LINKS.value])
-    cat_item_rels_repo = RV4.CatalogItemRelationshipRepository(test_db[CollectionNames.CATALOG_ITEM_RELATIONSHIPS.value])
-    cat_item_val_links_repo = RV4.CatalogItemToCatalogAliasLinkRepository(test_db[CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value])
+    obs_prod_links_repo = R.ObservatoryToProductLinkRepository(test_db[CollectionNames.OBSERVATORY_PRODUCT_LINKS.value])
+    obs_cat_links_repo = R.ObservatoryToCatalogLinkRepository(test_db[CollectionNames.OBSERVATORY_CATALOG_LINKS.value])
+    cat_item_links_repo = R.CatalogToCatalogItemLinkRepository(test_db[CollectionNames.CATALOG_CATALOG_ITEM_LINKS.value])
+    prod_cat_item_links_repo = R.ProductToCatalogItemLinkRepository(test_db[CollectionNames.PRODUCT_CATALOGS_ITEM_LINKS.value])
+    cat_item_rels_repo = R.CatalogItemRelationshipRepository(test_db[CollectionNames.CATALOG_ITEM_RELATIONSHIPS.value])
+    cat_item_val_links_repo = R.CatalogItemToCatalogAliasLinkRepository(test_db[CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value])
 
     return {
-        "obs": RV4.ObservatoryRepository(test_db[CollectionNames.OBSERVATORIES.value]),
-        "prod": RV4.ProductRepository(test_db[CollectionNames.PRODUCTS.value]),
-        "cat": RV4.CatalogRepository(test_db[CollectionNames.CATALOGS.value]),
-        "item": RV4.CatalogItemRepository(test_db[CollectionNames.CATALOG_ITEMS.value]),
-        "links": RV4.GraphLinkManager(
+        "obs": R.ObservatoriesRepository(test_db[CollectionNames.OBSERVATORIES.value]),
+        "prod": R.ProductsRepository(test_db[CollectionNames.PRODUCTS.value]),
+        "cat": R.CatalogsRepository(test_db[CollectionNames.CATALOGS.value]),
+        "item": R.CatalogItemsRepository(test_db[CollectionNames.CATALOG_ITEMS.value]),
+        "links": S.GraphLinkManager(
             obs_prod_links_repo,
             obs_cat_links_repo,
             cat_item_links_repo,
@@ -52,11 +53,11 @@ async def test_repository_crud_operations(repos):
     """
     Test that the BaseRepository correctly inserts, fetches, and deletes.
     """
-    prod_repo:RV4.ProductRepository = repos["prod"]
+    prod_repo:R.ProductsRepository = repos["prod"]
     
     # 1. Insert
     pid1 = "prod_test_01"
-    new_prod = MV4.ProductX(
+    new_prod = M.ProductX(
         product_id  = pid1,
         name        = "Test Breast Cancer Report",
         description = "A test description",
@@ -98,15 +99,15 @@ async def test_graph_link_manager(repos):
     cat_id = "cat_spatial_01"
     item_id = "item_mx_01"
     
-    observatory_repository:RV4.ObservatoryRepository = repos["obs"]
-    product_repository    :RV4.ProductRepository     = repos["prod"]
-    catalog_repository    :RV4.CatalogRepository     = repos["cat"]
-    graph_linker_manager  :RV4.GraphLinkManager      = repos["links"]
+    observatory_repository:R.ObservatoriesRepository = repos["obs"]
+    product_repository    :R.ProductsRepository     = repos["prod"]
+    catalog_repository    :R.CatalogsRepository     = repos["cat"]
+    graph_linker_manager  :S.GraphLinkManager      = repos["links"]
 
-    result = await observatory_repository.insert(MV4.ObservatoryX(observatory_id=obs_id, title="Test Obs", description="", metadata={}))
+    result = await observatory_repository.insert(M.ObservatoryX(observatory_id=obs_id, title="Test Obs", description="", metadata={}))
     assert result.is_ok, f"Failed to insert observatory: {result.unwrap_err()}"
     
-    result = await product_repository.insert(MV4.ProductX(product_id=prod_id, name="Test Prod", description="", metadata={}))
+    result = await product_repository.insert(M.ProductX(product_id=prod_id, name="Test Prod", description="", metadata={}))
     assert result.is_ok, f"Failed to insert product: {result.unwrap_err()}"
     
     # 2. Test Observatory -> Product Link
