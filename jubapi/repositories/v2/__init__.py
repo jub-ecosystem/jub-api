@@ -1,8 +1,8 @@
 from jubapi.repositories.v2.base import BaseRepository
 from motor.motor_asyncio import AsyncIOMotorCollection as Collection
-from pymongo.results import UpdateResult,DeleteResult
-import jubapi.models.v2 as MV4
-from typing import List, Tuple
+import datetime as DT
+import jubapi.models.v2 as M
+from typing import List
 from option import Result,Err,Ok
 import jubapi.errors as EX
 from jubapi.log.log import Log
@@ -14,60 +14,161 @@ log = Log(
 )
 
 
-class ObservatoryRepository(BaseRepository[MV4.ObservatoryX]):
+class ObservatoriesRepository(BaseRepository[M.ObservatoryX]):
     def __init__(self, collection: Collection):
-        super().__init__(collection, MV4.ObservatoryX, "observatory_id")
+        super().__init__(collection, M.ObservatoryX, "observatory_id")
 
-class ProductRepository(BaseRepository[MV4.ProductX]):
+class ProductsRepository(BaseRepository[M.ProductX]):
     def __init__(self, collection: Collection):
-        super().__init__(collection, MV4.ProductX, "product_id")
+        super().__init__(collection, M.ProductX, "product_id")
 
-class CatalogRepository(BaseRepository[MV4.CatalogX]):
+class CatalogsRepository(BaseRepository[M.CatalogX]):
     def __init__(self, collection: Collection):
-        super().__init__(collection, MV4.CatalogX, "catalog_id")
+        super().__init__(collection, M.CatalogX, "catalog_id")
 
 
-class CatalogItemRepository(BaseRepository[MV4.CatalogItemX]):
+class CatalogItemsRepository(BaseRepository[M.CatalogItemX]):
     def __init__(self, collection: Collection):
-        super().__init__(collection, MV4.CatalogItemX, "catalog_item_id")
+        super().__init__(collection, M.CatalogItemX, "catalog_item_id")
 
+    async def find_by_value(self, search_value: str) -> List[M.CatalogItemX]:
+            """
+            Finds catalog items that exactly match the given string value.
+            """
+            try:
+                # Query the collection for an exact match on the 'value' field
+                cursor = self.collection.find({"value": search_value})
+                
+                # Fetch all matching documents and map them to models
+                docs = await cursor.to_list(length=None)
+                return [M.CatalogItemX.from_doc(doc) for doc in docs]
+                
+            except Exception as e:
+                log.error(f"Error querying catalog items by value '{search_value}': {e}")
+                return []
+    async def find_by_temporal_operator(self, mongo_op: str, target_date: str) -> List[M.CatalogItemX]:
+            """
+            Finds catalog items based on a temporal operator and date.
+            """
+            try:
+                # 1. Convert the standardized ISO string to a Python datetime object
+                # MongoDB requires native datetime objects to run operators like $gte and $lte correctly.
+                if isinstance(target_date, str):
+                    dt_val = DT.datetime.fromisoformat(target_date.replace("Z", "+00:00"))
+                else:
+                    dt_val = target_date
 
-class CatalogItemAliasRepository(BaseRepository[MV4.CatalogItemAlias]):
+                # 2. Query the collection
+                cursor = self.collection.find({
+                    "value_type": "DATETIME", # Ensure this matches your Enum if you use one (e.g., M.CatalogItemValueType.DATETIME)
+                    "temporal_value": {mongo_op: dt_val}
+                })
+                
+                # 3. Fetch and map to models
+                docs = await cursor.to_list(length=None)
+                return [M.CatalogItemX.from_doc(doc) for doc in docs]
+                
+            except Exception as e:
+                # Depending on how your repo handles errors, you might want to log this or raise a custom error.
+                log.error(f"Error querying temporal operator {mongo_op} with date {target_date}: {e}")
+                return []
+
+class CatalogItemAliasesRepository(BaseRepository[M.CatalogItemAlias]):
     def __init__(self, collection: Collection):
-        super().__init__(collection, MV4.CatalogItemAlias, "catalog_item_alias_id")
+        super().__init__(collection, M.CatalogItemAlias, "catalog_item_alias_id")
 
 
 # 1. Observatory <-> Product
-class ObservatoryToProductLinkRepository(BaseRepository[MV4.ObservatoryToProductLink]):
+class ObservatoryToProductLinkRepository(BaseRepository[M.ObservatoryToProductLink]):
     def __init__(self, collection: Collection):
-        super().__init__(collection, MV4.ObservatoryToProductLink, "observatory_id")
+        super().__init__(collection, M.ObservatoryToProductLink, "observatory_id")
 
 # 2. Observatory <-> Catalog
-class ObservatoryToCatalogLinkRepository(BaseRepository[MV4.ObservatoryToCatalogLink]):
+class ObservatoryToCatalogLinkRepository(BaseRepository[M.ObservatoryToCatalogLink]):
     def __init__(self, collection: Collection):
-        super().__init__(collection, MV4.ObservatoryToCatalogLink, "observatory_id")
+        super().__init__(collection, M.ObservatoryToCatalogLink, "observatory_id")
+    async def get_by_catalog_id(self, catalog_id:str)->Result[List[M.ObservatoryToCatalogLink],EX.JubError]:
+        try: 
+            result = self.collection.find({"catalog_id": catalog_id})
+            items = await result.to_list(length=None)
+            models:List[M.ObservatoryToCatalogLink] = []
+            for item in items:
+                m = M.ObservatoryToCatalogLink(
+                    observatory_id = item.get('observatory_id',""),
+                    catalog_id     = item.get('catalog_id',"")
+                )
+                models.append(m)
+                
+                # log.info(f"Found ObservatoryToCatalogLink: {item}")
+            return Ok(models)
+        except Exception as e:
+            return Err(EX.JubError.from_exception(e))
 
 # 3. Catalog -> Catalog Item
-class CatalogToCatalogItemLinkRepository(BaseRepository[MV4.CatalogToCatalogItemLink]):
+class CatalogToCatalogItemLinkRepository(BaseRepository[M.CatalogToCatalogItemLink]):
     def __init__(self, collection: Collection):
-        super().__init__(collection, MV4.CatalogToCatalogItemLink, "catalog_id")
+        super().__init__(collection, M.CatalogToCatalogItemLink, "catalog_id")
+    async def get_by_catalog_item_id(self, catalog_item_id:str)->Result[List[M.CatalogToCatalogItemLink],EX.JubError]:
+        try: 
+            result = self.collection.find({"catalog_item_id": catalog_item_id})
+            items = await result.to_list(length=None)
+            models:List[M.CatalogToCatalogItemLink] = []
+            for item in items:
+                m = M.CatalogToCatalogItemLink(
+                    catalog_id      = item.get('catalog_id',""),
+                    catalog_item_id = item.get('catalog_item_id',"")
+                )
+                models.append(m)
+                
+                # log.info(f"Found CatalogToCatalogItemLink: {item}")
+            return Ok(models)
+        except Exception as e:
+            return Err(EX.JubError.from_exception(e))
+    async def get_catalog_id_by_catalog_item_id(self, catalog_item_id:str)->Result[str,EX.JubError]:
+        try: 
+            result = await self.collection.find_one({"catalog_item_id": catalog_item_id})
+            if not result:
+                return Err(EX.NotFound(f"No catalog link found for item {catalog_item_id}"))
+            catalog_id = result.get('catalog_id',"")
+            return Ok(catalog_id)
+        except Exception as e:
+            return Err(EX.JubError.from_exception(e))
 
 # 4. Product -> Catalog Item 
-class ProductToCatalogItemLinkRepository(BaseRepository[MV4.CatalogItemToProductLink]):
+class ProductToCatalogItemLinkRepository(BaseRepository[M.CatalogItemToProductLink]):
     def __init__(self, collection: Collection):
-        super().__init__(collection, MV4.CatalogItemToProductLink, "product_id")
+        super().__init__(collection, M.CatalogItemToProductLink, "product_id")
+    
+    async def get_by_product_id(self,product_id:str)->Result[List[M.CatalogItemToProductLink],EX.JubError]:
+        try: 
+            result = self.collection.find({"product_id": product_id})
+            items = await result.to_list(length=None)
+            models:List[M.CatalogItemToProductLink] = []
+            for item in items:
+                m = M.CatalogItemToProductLink(
+                    product_id      = item.get('product_id',""),
+                    catalog_item_id = item.get('catalog_item_id',"")
+                )
+                models.append(m)
+                
+                # log.info(f"Found CatalogItemToProductLink: {item}")
+            return Ok(models)
+        except Exception as e:
+            return Err(EX.JubError.from_exception(e))
+
+
 
 
 
 # Catalog Item Value -> Catalog Item (The Alias Engine)
-class CatalogItemToCatalogAliasLinkRepository(BaseRepository[MV4.CatalogItemToCatalogAliasLink]):
+class CatalogItemToCatalogAliasLinkRepository(BaseRepository[M.CatalogItemToCatalogAliasLink]):
     def __init__(self, collection: Collection):
-        super().__init__(collection, MV4.CatalogItemToCatalogAliasLink, "catalog_item_id")
+        super().__init__(collection, M.CatalogItemToCatalogAliasLink, "catalog_item_id")
 
 # 5. Catalog Item -> Catalog Item (The Hierarchy Engine)
-class CatalogItemRelationshipRepository(BaseRepository[MV4.CatalogItemRelationship]):
+class CatalogItemRelationshipRepository(BaseRepository[M.CatalogItemRelationship]):
     def __init__(self, collection: Collection):
-        super().__init__(collection, MV4.CatalogItemRelationship, "parent_id")
+        super().__init__(collection, M.CatalogItemRelationship, "parent_id")
 
     
     async def get_all_children_nodes(self, root_parent_id: str,length:int = None) -> Result[List[str], EX.JubError]:
@@ -104,287 +205,3 @@ class CatalogItemRelationshipRepository(BaseRepository[MV4.CatalogItemRelationsh
 
 
 
-class GraphLinkManager:
-    """
-    Centralized manager for severing edges in the Jub graph.
-    Relies strictly on injected Link Repositories.
-    """
-    def __init__(
-        self, 
-        observatory_product_link_repository: ObservatoryToProductLinkRepository,
-        observatory_catalog_link_repository: ObservatoryToCatalogLinkRepository,
-        catalog_catalog_item_link_repository: CatalogToCatalogItemLinkRepository,
-        product_catalog_item_link_repository: ProductToCatalogItemLinkRepository,
-        catalog_item_relationship_repository: CatalogItemRelationshipRepository,
-        catalog_item_catalog_alias_link_repository: CatalogItemToCatalogAliasLinkRepository
-    ):
-        self.observatory_product_link_repository        = observatory_product_link_repository
-        self.observatory_catalog_link_repository        = observatory_catalog_link_repository
-        self.catalog_catalog_item_link_repository               = catalog_catalog_item_link_repository
-        self.product_catalog_item_link_repository       = product_catalog_item_link_repository
-        self.catalog_item_relationship_repository       = catalog_item_relationship_repository
-        self.catalog_item_catalog_alias_link_repository = catalog_item_catalog_alias_link_repository
-
-    # Get links
-    async def get_products_linked_to_observatory(self, observatory_id: str) -> Result[List[str], EX.JubError]:
-        try:
-            cursor = self.observatory_product_link_repository.collection.find({"observatory_id": observatory_id})
-            results = await cursor.to_list(length=None)
-            product_ids = [doc["product_id"] for doc in results]
-            return Ok(product_ids)
-        except Exception as e:
-            log.error(f"Error getting products linked to observatory: {e}")
-            return Err(EX.JubError.from_exception(e))
-
-    async def count_products_linked_to_observatory(self, observatory_id: str) -> Result[int, EX.JubError]:
-        try:
-            count = await self.observatory_product_link_repository.collection.count_documents({"observatory_id": observatory_id})
-            return Ok(count)
-        except Exception as e:
-            log.error(f"Error counting products linked to observatory: {e}")
-            return Err(EX.JubError.from_exception(e))
-        
-    async def exists_product_linked_to_observatory(self, observatory_id: str, product_id:str) -> Result[bool, EX.JubError]:
-        try:
-            count = await self.observatory_product_link_repository.collection.count_documents({"observatory_id": observatory_id, "product_id": product_id})
-            return Ok(count > 0)
-        except Exception as e:
-            log.error(f"Error checking existence of product linked to observatory: {e}")
-            return Err(EX.JubError.from_exception(e))
-        
-    async def exists_products_linked_to_observatory(self, observatory_id: str) -> Result[bool, EX.JubError]:
-        try:
-            count = await self.observatory_product_link_repository.collection.count_documents({"observatory_id": observatory_id})
-            return Ok(count > 0)
-        except Exception as e:
-            log.error(f"Error checking existence of products linked to observatory: {e}")
-            return Err(EX.JubError.from_exception(e))
-    
-    # _______________________
-    async def get_catalogs_linked_to_observatory(self, observatory_id: str) -> Result[List[str], EX.JubError]:
-        try:
-            cursor = self.observatory_catalog_link_repository.collection.find({"observatory_id": observatory_id})
-            results = await cursor.to_list(length=None)
-            catalog_ids = [doc["catalog_id"] for doc in results]
-            return Ok(catalog_ids)
-        except Exception as e:
-            log.error(f"Error getting catalogs linked to observatory: {e}")
-            return Err(EX.JubError.from_exception(e))
-    async def count_catalogs_linked_to_observatory(self, observatory_id: str) -> Result[int, EX.JubError]:
-        try:
-            count = await self.observatory_catalog_link_repository.collection.count_documents({"observatory_id": observatory_id})
-            return Ok(count)
-        except Exception as e:
-            log.error(f"Error counting catalogs linked to observatory: {e}")
-            return Err(EX.JubError.from_exception(e))
-    async def exists_catalog_linked_to_observatory(self, observatory_id: str, catalog_id:str) -> Result[bool, EX.JubError]:
-        try:
-            count = await self.observatory_catalog_link_repository.collection.count_documents({"observatory_id": observatory_id, "catalog_id": catalog_id})
-            return Ok(count > 0)
-        except Exception as e:
-            log.error(f"Error checking existence of catalog linked to observatory: {e}")
-            return Err(EX.JubError.from_exception(e))
-    async def exists_catalogs_linked_to_observatory(self, observatory_id: str) -> Result[bool, EX.JubError]:
-        try:
-            count = await self.observatory_catalog_link_repository.collection.count_documents({"observatory_id": observatory_id})
-            return Ok(count > 0)
-        except Exception as e:
-            log.error(f"Error checking existence of catalogs linked to observatory: {e}")
-            return Err(EX.JubError.from_exception(e))
-    # _______________________
-    async def get_catalog_items_linked_to_catalog(self, catalog_id: str) -> Result[List[str], EX.JubError]:
-        try:
-            cursor = self.catalog_catalog_item_link_repository.collection.find({"catalog_id": catalog_id})
-            results = await cursor.to_list(length=None)
-            catalog_item_ids = [doc["catalog_item_id"] for doc in results]
-            return Ok(catalog_item_ids)
-        except Exception as e:
-            log.error(f"Error getting catalog items linked to catalog: {e}")
-            return Err(EX.JubError.from_exception(e))
-    async def count_catalog_items_linked_to_catalog(self, catalog_id: str) -> Result[int, EX.JubError]:
-        try:
-            count = await self.catalog_catalog_item_link_repository.collection.count_documents({"catalog_id": catalog_id})
-            return Ok(count)
-        except Exception as e:
-            log.error(f"Error counting catalog items linked to catalog: {e}")
-            return Err(EX.JubError.from_exception(e))
-    async def exists_catalog_item_linked_to_catalog(self, catalog_id: str, catalog_item_id:str) -> Result[bool, EX.JubError]:
-        try:
-            count = await self.catalog_catalog_item_link_repository.collection.count_documents({"catalog_id": catalog_id, "catalog_item_id": catalog_item_id})
-            return Ok(count > 0)
-        except Exception as e:
-            log.error(f"Error checking existence of catalog item linked to catalog: {e}")
-            return Err(EX.JubError.from_exception(e))
-    async def exists_catalog_items_linked_to_catalog(self, catalog_id: str) -> Result[bool, EX.JubError]:
-        try:
-            count = await self.catalog_catalog_item_link_repository.collection.count_documents({"catalog_id": catalog_id})
-            return Ok(count > 0)
-        except Exception as e:
-            log.error(f"Error checking existence of catalog items linked to catalog: {e}")
-            return Err(EX.JubError.from_exception(e))
-    # _______________________
-    async def get_catalog_items_linked_to_product(self, product_id: str) -> Result[List[str], EX.JubError]:
-        try:
-            cursor = self.product_catalog_item_link_repository.collection.find({"product_id": product_id})
-            results = await cursor.to_list(length=None)
-            catalog_item_ids = [doc["catalog_item_id"] for doc in results]
-            return Ok(catalog_item_ids)
-        except Exception as e:
-            log.error(f"Error getting catalog items linked to product: {e}")
-            return Err(EX.JubError.from_exception(e))
-    async def count_catalog_items_linked_to_product(self, product_id: str) -> Result[int, EX.JubError]:
-        try:
-            count = await self.product_catalog_item_link_repository.collection.count_documents({"product_id": product_id})
-            return Ok(count)
-        except Exception as e:
-            log.error(f"Error counting catalog items linked to product: {e}")
-            return Err(EX.JubError.from_exception(e))
-    async def exists_catalog_item_linked_to_product(self, product_id: str, catalog_item_id:str) -> Result[bool, EX.JubError]:
-        try:
-            count = await self.product_catalog_item_link_repository.collection.count_documents({"product_id": product_id, "catalog_item_id": catalog_item_id})
-            return Ok(count > 0)
-        except Exception as e:
-            log.error(f"Error checking existence of catalog item linked to product: {e}")
-            return Err(EX.JubError.from_exception(e))
-    async def exists_catalog_items_linked_to_product(self, product_id: str) -> Result[bool, EX.JubError]:
-        try:
-            count = await self.product_catalog_item_link_repository.collection.count_documents({"product_id": product_id})
-            return Ok(count > 0)
-        except Exception as e:
-            log.error(f"Error checking existence of catalog items linked to product: {e}")
-            return Err(EX.JubError.from_exception(e))
-    # _______________________
-
-
-    async def link_observatory_to_product(self, observatory_id: str, product_id: str)->Result[UpdateResult,EX.JubError]:
-        try:
-            link = MV4.ObservatoryToProductLink(observatory_id=observatory_id, product_id=product_id)
-            r = await self.observatory_product_link_repository.collection.update_one(
-                {"observatory_id": observatory_id, "product_id": product_id},
-                {"$set": link.model_dump()},
-                upsert=True
-            )
-            return Ok(r)
-        except Exception as e:
-            log.error(f"Error linking observatory to product: {e}")
-            return Err(EX.JubError.from_exception(e))
-            # raise EX.JubError(f"Failed to link observatory to product: {str(e)}")
-
-    async def link_observatory_to_catalog(self, observatory_id: str, catalog_id: str,level:int=0)->Result[UpdateResult,EX.JubError]:
-        try:
-            link = MV4.ObservatoryToCatalogLink(observatory_id=observatory_id, catalog_id=catalog_id,level=level)
-            r = await self.observatory_catalog_link_repository.collection.update_one(
-                {"observatory_id": observatory_id, "catalog_id": catalog_id},
-                {"$set": link.model_dump()},
-                upsert=True
-            )
-            return Ok(r)
-        except Exception as e:
-            log.error(f"Error linking observatory to catalog: {e}")
-            return Err(EX.JubError.from_exception(e))
-        
-
-    async def link_catalog_to_item(self, catalog_id: str, catalog_item_id: str)->Result[UpdateResult,EX.JubError]:
-        try:
-            link = MV4.CatalogToCatalogItemLink(catalog_id=catalog_id, catalog_item_id=catalog_item_id)
-            r = await self.catalog_catalog_item_link_repository.collection.update_one(
-                {"catalog_id": catalog_id, "catalog_item_id": catalog_item_id},
-                {"$set": link.model_dump()},
-                upsert=True
-            )
-            return Ok(r)
-        except Exception as e:
-            log.error(f"Error linking catalog to item: {e}")
-            return Err(EX.JubError.from_exception(e))
-        
-
-    async def link_product_to_catalog_item(self, product_id: str, catalog_item_id: str)->Result[UpdateResult,EX.JubError]:
-        """Tags a product with a specific dimension (e.g., 'FEMALE' or 'VIC')."""
-        try:
-            link = MV4.CatalogItemToProductLink(product_id=product_id, catalog_item_id=catalog_item_id)
-            r = await self.product_catalog_item_link_repository.collection.update_one(
-                {"product_id": product_id, "catalog_item_id": catalog_item_id},
-                {"$set": link.model_dump()},
-                upsert=True
-            )
-            return Ok(r)
-        except Exception as e:
-            log.error(f"Error linking product to catalog item: {e}")
-            return Err(EX.JubError.from_exception(e))
-        
-
-    async def set_item_relationship(self, parent_id: str, child_id: str)->Result[UpdateResult,EX.JubError]:
-        """Builds the hierarchy (e.g., MX -> TAM)."""
-        try:
-            link = MV4.CatalogItemRelationship(parent_id=parent_id, child_id=child_id)
-            r = await self.catalog_item_relationship_repository.collection.update_one(
-                {"parent_id": parent_id, "child_id": child_id},
-                {"$set": link.model_dump()},
-                upsert=True
-            )
-            return Ok(r)
-        except Exception as e:
-            log.error(f"Error setting item relationship: {e}")
-            return Err(EX.JubError.from_exception(e))
-
-    async def link_item_to_alias(self, catalog_item_id: str, catalog_item_alias_id: str)->Result[UpdateResult,EX.JubError]:
-        """Links an alias/value to the canonical item."""
-        try:
-
-            link = MV4.CatalogItemToCatalogAliasLink(
-                catalog_item_id=catalog_item_id, 
-                catalog_item_alias_id=catalog_item_alias_id
-            )
-            r = await self.catalog_item_catalog_alias_link_repository.collection.update_one(
-                {"catalog_item_id": catalog_item_id, "catalog_item_value_id": catalog_item_alias_id},
-                {"$set": link.model_dump()},
-                upsert=True
-            )
-            return Ok(r)
-        except Exception as e:
-            log.error(f"Error linking item to value: {e}")
-            return Err(EX.JubError.from_exception(e))
-
-    #  Remove links (called by services when an entity is deleted, to maintain graph integrity)
-    async def remove_all_product_links(self, product_id: str)->Result[Tuple[DeleteResult, DeleteResult],EX.JubError]:
-        """Called by ProductService when a product is completely deleted."""
-        try:
-            r1 = await self.observatory_product_link_repository.collection.delete_many({"product_id": product_id})
-            r2 = await self.product_catalog_item_link_repository.collection.delete_many({"product_id": product_id})
-            return Ok((r1, r2))
-        except Exception as e:
-            log.error(f"Error removing all product links: {e}")
-            return Err(EX.JubError.from_exception(e))
-
-
-    async def remove_all_catalog_links(self, catalog_id: str)->Result[Tuple[DeleteResult, DeleteResult],EX.JubError]:
-        """Called by CatalogService when a catalog is completely deleted."""
-        try:
-            r1 = await self.observatory_catalog_link_repository.collection.delete_many({"catalog_id": catalog_id})
-            r2 = await self.catalog_catalog_item_link_repository.collection.delete_many({"catalog_id": catalog_id})
-            return Ok((r1, r2))
-        except Exception as e:
-            log.error(f"Error removing all catalog links: {e}")
-            return Err(EX.JubError.from_exception(e))
-
-    async def remove_all_catalog_item_links(self, catalog_item_id: str)->Result[Tuple[DeleteResult, DeleteResult, DeleteResult, DeleteResult],EX.JubError]:
-        """
-        Called by CatalogService when an item is deleted. 
-        Wipes its tags, its aliases, and its parent/child relationships.
-        """
-        try:
-            r1 = await self.catalog_catalog_item_link_repository.collection.delete_many({"catalog_item_id": catalog_item_id})
-            r2 = await self.product_catalog_item_link_repository.collection.delete_many({"catalog_item_id": catalog_item_id})
-            r3 = await self.catalog_item_catalog_alias_link_repository.collection.delete_many({"catalog_item_id": catalog_item_id})
-            
-            # Remove it from the hierarchy tree (whether it was a parent or a child)
-            r4 = await self.catalog_item_relationship_repository.collection.delete_many({"$or": [
-                {"parent_id": catalog_item_id},
-                {"child_id": catalog_item_id}
-            ]})
-            return Ok((r1, r2, r3, r4))
-        except Exception as e:
-            log.error(f"Error removing all catalog item links: {e}")
-            return Err(EX.JubError.from_exception(e))
-
-    

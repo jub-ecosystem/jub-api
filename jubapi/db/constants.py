@@ -6,6 +6,8 @@ class CollectionNames(Enum):
     CATALOGS                         = "catalogs"
     CATALOG_ITEMS                    = "catalog_items"
     CATALOG_ITEM_VALUES              = "catalog_item_values"
+    CATALOG_ITEM_ALIASES             = "catalog_item_aliases"
+    
     OBSERVATORY_PRODUCT_LINKS        = "observatory_product_links"
     PRODUCT_CATALOGS_ITEM_LINKS      = "product_catalogs_item_links"
     CATALOG_ITEM_RELATIONSHIPS       = "catalog_item_relationships"

@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from jubapi.log.log import Log
 from jubapi.db import connect_to_mongo,close_mongo_connection
 from jubapi.controllers.v1 import observatories_router,catalogs_router,products_router
+from jubapi.controllers.v2 import observatories_router_v2,search_router_v2
 import jubapi.config as CX
 
 log       = Log(
@@ -58,3 +59,5 @@ app.openapi = generate_openapi
 app.include_router(observatories_router,tags=["observatories"])
 app.include_router(catalogs_router,tags=["catalogs"])
 app.include_router(products_router,tags=["products"])
+app.include_router(observatories_router_v2,prefix="/api/v2",tags=["observatories_v2"])
+app.include_router(search_router_v2,prefix="/api/v2",tags=["search_v2"])

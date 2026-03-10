@@ -28,38 +28,26 @@ class Descriptable(TimestampedModel):
   description: Optional[str] = Field(default="")
   metadata: Optional[Dict[str, str]] = Field(default_factory=dict)
 
+
 class ObservatoryX(Descriptable):
   observatory_id: str
   title: str
+  image_url: Optional[str] = None
+  @staticmethod
+  def from_doc(doc: Dict) -> 'ObservatoryX':
+    return ObservatoryX(
+        observatory_id = str(doc.get("_id")),
+        title          = doc['title'],
+        description    = doc.get('description', ''),
+        metadata       = doc.get('metadata', {}),
+        created_at     = doc.get('created_at', DT.datetime.now(DT.timezone.utc)),
+        updated_at     = doc.get('updated_at', DT.datetime.now(DT.timezone.utc))
+    )
 
  
 class ProductX(Descriptable):
     product_id: str
     name: str
-   
-
-class CatalogItemValueType(str, Enum):
-    STRING   = "STRING"
-    NUMBER   = "NUMBER"
-    BOOLEAN  = "BOOLEAN"
-    DATETIME = "DATETIME"
-
-
-
-class CatalogItemAlias(Descriptable):
-    catalog_item_alias_id: str
-    value: str
-    value_type: CatalogItemValueType
-
-class CatalogItemX(Descriptable):
-  catalog_item_id: str
-  name: str
-  value: UpperSnakeStr
-  code: int
-  value_type: CatalogItemValueType
-  temporal_value: Optional[DT.datetime] = None
-
-
 
 class CatalogType(str, Enum):
     INTEREST   = "INTEREST"
@@ -77,28 +65,79 @@ class CatalogX(Descriptable):
     catalog_type: CatalogType
     parent_catalog_id: Optional[str] = None
     level: int = 0
+
+class CatalogItemValueType(str, Enum):
+    STRING   = "STRING"
+    NUMBER   = "NUMBER"
+    BOOLEAN  = "BOOLEAN"
+    DATETIME = "DATETIME"
+class CatalogItemX(Descriptable):
+  catalog_item_id: str
+  name: str
+  value: UpperSnakeStr
+  code: int
+  value_type: CatalogItemValueType
+  temporal_value: Optional[DT.datetime] = None
+
+  @staticmethod
+  def from_doc(doc: Dict) -> 'CatalogItemX':
+    return CatalogItemX(
+        catalog_item_id = str(doc.get("catalog_item_id")),
+        name            = doc['name'],
+        value           = doc['value'],
+        code            = doc['code'],
+        value_type      = CatalogItemValueType(doc['value_type']),
+        temporal_value  = doc.get('temporal_value'),
+        description     = doc.get('description', ''),
+        metadata        = doc.get('metadata', {}),
+        created_at      = doc.get('created_at', DT.datetime.now(DT.timezone.utc)),
+        updated_at      = doc.get('updated_at', DT.datetime.now(DT.timezone.utc))
+    )
+
+
+class CatalogItemAlias(Descriptable):
+    catalog_item_alias_id: str
+    value: str
+    value_type: CatalogItemValueType
+
+    @staticmethod
+    def from_doc(doc: Dict) -> 'CatalogItemAlias':
+        return CatalogItemAlias(
+            catalog_item_alias_id = str(doc.get("catalog_item_alias_id")),
+            value                 = doc.get("value",None),
+            value_type            = CatalogItemValueType(doc['value_type']),
+            description           = doc.get('description', ''),
+            metadata              = doc.get('metadata', {}),
+            created_at            = doc.get('created_at', DT.datetime.now(DT.timezone.utc)),
+            updated_at            = doc.get('updated_at', DT.datetime.now(DT.timezone.utc))
+        )
+
+
     
 # Links
-
-class CatalogItemToProductLink(TimestampedModel):
-    product_id: str
-    catalog_item_id: str
-class CatalogToCatalogItemLink(TimestampedModel):
-  catalog_id: str
-  catalog_item_id: str
-  
-class CatalogItemToCatalogAliasLink(TimestampedModel):
-    catalog_item_id: str
-    catalog_item_alias_id: str
-class CatalogItemRelationship(TimestampedModel):
-    parent_id: str # e.g., ID for "MX"
-    child_id: str  # e.g., ID for "SLP"
-class ObservatoryToProductLink(TimestampedModel):
-  observatory_id: str
-  product_id: str
-  
 class ObservatoryToCatalogLink(TimestampedModel):
   observatory_id: str
   catalog_id: str 
   level:int=0
+
+class CatalogToCatalogItemLink(TimestampedModel):
+  catalog_id: str
+  catalog_item_id: str
+
+class CatalogItemToCatalogAliasLink(TimestampedModel):
+    catalog_item_id: str
+    catalog_item_alias_id: str
+
+class ObservatoryToProductLink(TimestampedModel):
+  observatory_id: str
+  product_id: str
+  
+class CatalogItemToProductLink(TimestampedModel):
+    product_id: str
+    catalog_item_id: str
+  
+class CatalogItemRelationship(TimestampedModel):
+    parent_id: str # e.g., ID for "MX"
+    child_id: str  # e.g., ID for "SLP"
+  
 
