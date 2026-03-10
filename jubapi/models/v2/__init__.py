@@ -36,7 +36,7 @@ class ObservatoryX(Descriptable):
   @staticmethod
   def from_doc(doc: Dict) -> 'ObservatoryX':
     return ObservatoryX(
-        observatory_id = str(doc.get("_id")),
+        observatory_id = str(doc.get("observatory_id")),
         title          = doc['title'],
         description    = doc.get('description', ''),
         metadata       = doc.get('metadata', {}),
