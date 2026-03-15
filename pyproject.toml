@@ -15,6 +15,7 @@ nanoid = "^2.0.0"
 pydantic = "^2.8.2"
 motor = "^3.6.0"
 pyparsing = "^3.2.0"
+xolo = "0.0.10a16"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -26,9 +27,10 @@ coverage = "^7.13.4"
 mkdocstrings-python = "^2.0.3"
 zensical = "^0.0.24"
 
-[tool.poetry.group.docs.dependencies]
-mkdocs-material = "^9.5.44"
-
+[[tool.poetry.source]]
+name = "test"
+url = "https://test.pypi.org/simple/"
+priority = "supplemental"
 
 [build-system]
 requires = ["poetry-core"]
