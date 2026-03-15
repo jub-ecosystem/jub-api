@@ -93,8 +93,12 @@ class QueryAST(BaseModel):
             # Split by dot and remove ALL wildcards to get the root path
             parts = [p for p in cond_str.split('.') if p != '*']
             if prefix == "VI":
-                catalog_value = parts[0]  # The first part is the catalog value
-                item_path = parts[1:]          # Everything after the first part is the item path
+                if len(parts) == 0:
+                    catalog_value = "*"
+                    item_path = []
+                else:
+                    catalog_value = parts[0]  # The first part is the catalog value
+                    item_path = parts[1:]          # Everything after the first part is the item path
             else:
                 item_path = parts  # For VS and VT, the entire path is relevant
             return Condition(operator="WILDCARD", catalog_value=catalog_value, item_path=item_path)
@@ -128,7 +132,6 @@ class QueryAST(BaseModel):
         parsed_queries = []
         for prefix, argument in matches:
             argument = argument.strip()
-            
             # Determine the logical grouping inside the parentheses
             if ' OR ' in argument:
                 logic = "OR"
@@ -139,7 +142,6 @@ class QueryAST(BaseModel):
             else:
                 logic = "SINGLE"
                 raw_conds = [argument]
-                
             # Parse each split condition
             conditions = [QueryAST._parse_single_condition(c, prefix) for c in raw_conds]
             

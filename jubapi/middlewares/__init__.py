@@ -17,7 +17,8 @@ def get_search_service()->S.SearchService:
         product_catalog_item_link_repository= R.ProductToCatalogItemLinkRepository(get_collection(DC.CollectionNames.PRODUCT_CATALOGS_ITEM_LINKS.value)),
         observatory_catalog_link_repository= R.ObservatoryToCatalogLinkRepository(get_collection(DC.CollectionNames.OBSERVATORY_CATALOG_LINKS.value)),
         catalog_catalog_item_link_repository= R.CatalogToCatalogItemLinkRepository(get_collection(DC.CollectionNames.CATALOG_CATALOG_ITEM_LINKS.value)),
-        observatory_repository = R.ObservatoriesRepository(get_collection(DC.CollectionNames.OBSERVATORIES.value))
+        observatory_repository = R.ObservatoriesRepository(get_collection(DC.CollectionNames.OBSERVATORIES.value)),
+        catalog_repository = R.CatalogsRepository(get_collection(DC.CollectionNames.CATALOGS.value))
 
     )
     return service

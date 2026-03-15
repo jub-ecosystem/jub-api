@@ -1,5 +1,7 @@
 from pymongo.results import UpdateResult,DeleteResult
 from typing import List,Optional,Tuple,Dict,Any
+
+from pytest import skip
 import jubapi.models.v2 as M
 import asyncio
 import jubapi.repositories.v2 as R
@@ -478,7 +480,7 @@ class CatalogService:
             
         return Ok(item_id)
 
-    async def add_value_to_item(self, catalog_item_id: str, value: M.CatalogItemAlias) -> Result[str,EX.JubError]:
+    async def add_alias_to_catalog_item(self, catalog_item_id: str, value: M.CatalogItemAlias) -> Result[str,EX.JubError]:
         """Saves an alias (e.g., '1' or 'CDVALLES') and links it to the canonical item."""
         try: 
             val_id_result = await self.catalog_item_alias_repository.insert(value)
@@ -671,7 +673,8 @@ class SearchService:
         catalog_item_catalog_alias_link_repository: R.CatalogItemToCatalogAliasLinkRepository,
         observatory_catalog_link_repository: R.ObservatoryToCatalogLinkRepository,
         catalog_catalog_item_link_repository: R.CatalogToCatalogItemLinkRepository,
-        observatory_repository: R.ObservatoriesRepository
+        observatory_repository: R.ObservatoriesRepository,
+        catalog_repository: R.CatalogsRepository
     ):
         self.observatory_product_link_repository  = observatory_product_link_repository
         self.product_catalog_item_link_repository = product_catalog_item_link_repository
@@ -683,9 +686,35 @@ class SearchService:
         self.observatory_catalog_link_repository = observatory_catalog_link_repository
         self.catalog_catalog_item_link_repository = catalog_catalog_item_link_repository
         self.observatory_repository              = observatory_repository
+        self.catalog_repository                  = catalog_repository
         
  
-
+    async def __get_matched_catalog_items_by_catalog_type(self, catalog_type:str) -> List[M.CatalogItemX]:
+        matched_catalogs_result = await self.catalog_repository.get_catalog_by_catalog_type(catalog_type=catalog_type)
+        # print(f"Matched items result for catalog type '{catalog_type}': {matched_items_result}")
+        if matched_catalogs_result.is_err:
+            log.error(f"Error fetching temporal catalogs: {matched_catalogs_result.unwrap_err()}")
+            return []
+        
+        catalog_matched_items = matched_catalogs_result.unwrap()
+        matched_items=[]
+        if len(catalog_matched_items) == 0:
+            log.warning(f"No catalogs found for {catalog_type} type. Skipping temporal condition.")
+        else:
+            first_catalog = catalog_matched_items[0] # Assuming all temporal conditions refer to the same catalog structure
+            catalogs_items_result = await self.catalog_catalog_item_link_repository.find_by_ids([first_catalog.catalog_id])
+            print("catalogS_items",catalogs_items_result)
+            if catalogs_items_result.is_err:
+                log.error(f"Error fetching items for temporal catalog {first_catalog.catalog_id}: {catalogs_items_result.unwrap_err()}")
+                matched_items = []
+            else:
+                catalog_items_links = catalogs_items_result.unwrap()
+                catalog_item_ids    = [link.catalog_item_id for link in catalog_items_links]
+                items_cursor        = self.catalog_item_repository.collection.find({"catalog_item_id": {"$in": catalog_item_ids}})
+                items_docs          = await items_cursor.to_list(length=None)
+                matched_items       = [M.CatalogItemX.from_doc(doc) for doc in items_docs]
+        
+        return matched_items    
     async def search_observatories(self,query:str)->Result[DTO.ObservatoryXDTO, EX.JubError]:
         """
         Finds all observatories that possess the required catalogs to satisfy the DSL query.
@@ -697,7 +726,12 @@ class SearchService:
             print("AST",ast)
             for catalog_query in ast.queries:
                 for condition in catalog_query.group.conditions:
-                    
+                    log.debug({
+                        "message": "Processing condition",
+                        "catalog_value": condition.catalog_value,
+                        "operator": condition.operator,
+                        "item_path": condition.item_path
+                    })
                     matched_items = []
                     
                     # 1. Check catalog_items based on the AST catalog_value
@@ -706,22 +740,63 @@ class SearchService:
                         mongo_op_map = {">": "$gt", ">=": "$gte", "<": "$lt", "<=": "$lte", "=": "$eq"}
                         mongo_op = mongo_op_map.get(condition.operator, "$eq")
                         
-                        target_date = condition.item_path[-1] if isinstance(condition.item_path, list) else condition.item_path
-                        # Note: Assume target_date is already standardized to ISO format by the AST
-                        print("BEGORE")
-                        matched_items = await self.catalog_item_repository.find_by_temporal_operator(
-                            mongo_op=mongo_op, 
-                            target_date=target_date
-                        )
-                        print("MATCHED_ITEMS", matched_items)
+                        if len(condition.item_path) == 0:
+                            log.warning(f"Condition {condition} has an empty item path. Skipping.")
+                            matched_items = await self.__get_matched_catalog_items_by_catalog_type("TEMPORAL")
+                            # matched_items_result = await self.catalog_repository.get_catalog_by_catalog_type(catalog_type="TEMPORAL")
+                            # if matched_items_result.is_err:
+                            #     log.error(f"Error fetching temporal catalogs: {matched_items_result.unwrap_err()}")
+                            #     continue
+                            
+
+                            # catalog_matched_items = matched_items_result.unwrap()
+                            # if len(catalog_matched_items) == 0:
+                            #     log.warning("No catalogs found for TEMPORAL type. Skipping temporal condition.")
+                            #     matched_items = []
+                            # else:
+                            #     first_catalog = catalog_matched_items[0] # Assuming all temporal conditions refer to the same catalog structure
+                            #     catalogs_items_result = await self.catalog_catalog_item_link_repository.get_by_id(first_catalog.catalog_id)
+                            #     if catalogs_items_result.is_err:
+                            #         log.error(f"Error fetching items for temporal catalog {first_catalog.catalog_id}: {catalogs_items_result.unwrap_err()}")
+                            #         matched_items = []
+                            #     else:
+                            #         catalog_items_links = catalogs_items_result.unwrap()
+                            #         catalog_item_ids = [link.catalog_item_id for link in catalog_items_links]
+                            #         items_cursor = self.catalog_item_repository.collection.find({"catalog_item_id": {"$in": catalog_item_ids}})
+                            #         items_docs = await items_cursor.to_list(length=None)
+                            #         matched_items = [M.CatalogItemX.from_doc(doc) for doc in items_docs]
+                            # continue
+                        else: 
+                            target_date = condition.item_path[-1] if isinstance(condition.item_path, list) else condition.item_path
+                            # Note: Assume target_date is already standardized to ISO format by the AST
+                            matched_items = await self.catalog_item_repository.find_by_temporal_operator(
+                                mongo_op=mongo_op, 
+                                target_date=target_date
+                            )
+                        log.debug({
+                            "message": "Matched temporal condition",
+                            "mongo_op": mongo_op,
+                            # "target_date": target_date,
+                            "matched_items_count": len(matched_items)
+                        })
                     else:
                         # For SPATIAL, SEX, CIE10, PLOT_TYPE
-                        print("BEFORE___")
-                        leaf_value = condition.item_path[-1] if isinstance(condition.item_path, list) else condition.item_path
-                        print("BEFORE", leaf_value)
-                        matched_items = await self.catalog_item_repository.find_by_value(leaf_value)
-                        print("MATCHED_ITEMS", matched_items)
+                        print("Condition",condition)
+                        if len(condition.item_path) == 0:
+                            log.warning(f"Condition {condition} has an empty item path. Skipping.")
+                            catalog_type  = "INTEREST" if condition.catalog_value != "SPATIAL" else "SPATIAL"
+                            matched_items = await self.__get_matched_catalog_items_by_catalog_type(catalog_type)
+                            print("Matched items for empty path condition:", matched_items)
+                        else: 
+                            leaf_value = condition.item_path[-1] if isinstance(condition.item_path, list) else condition.item_path
+                            matched_items = await self.catalog_item_repository.find_by_value(leaf_value)
+                            log.debug({
+                                "message": "Matched non-temporal condition",
+                                "leaf_value": leaf_value,
+                                "matched_items_count": len(matched_items)
+                            })
 
+                    print("_"*40)
                     if not matched_items:
                         log.debug(f"Condition {condition} matched 0 items. No observatories can fulfill this.")
                         continue
@@ -731,11 +806,17 @@ class SearchService:
                     # We only need to check the first matched item, as all items 
                     # for a single condition belong to the same catalog dimension.
                     first_item_id = matched_items[0].catalog_item_id
-                    print("FIRST_ITEM_ID", first_item_id)
+                    log.debug({
+                        "message": "Processing first matched item",
+                        "first_item_id": first_item_id
+                    })
                     # Query the junction repository you mentioned
                     # catalog_links_result = await self.catalog_catalog_item_link_repository.get_by_catalog_item_id(first_item_id)
                     catalog_links_result = await self.catalog_catalog_item_link_repository.get_catalog_id_by_catalog_item_id(first_item_id)
-                    print(catalog_links_result)
+                    log.debug({
+                        "message": "Fetched catalog links",
+                        "catalog_links_result": str(catalog_links_result)
+                    })
                     if catalog_links_result.is_err:
                         log.error(f"Item {first_item_id} is orphaned! No catalog link found.")
                         return Err(EX.JubError(f"Database inconsistency: Item {first_item_id} has no catalog."))
@@ -797,12 +878,12 @@ class SearchService:
             })
             return Err(EX.JubError.from_exception(e))
         
-    async def search(self,query:str)->Result[DTO.ProductXDTO, EX.JubError]:
+    async def search(self,query:str,observatory_id: Optional[str] = None,skip:int=0,limit:int=10)->Result[DTO.ProductXDTO, EX.JubError]:
         """
         Takes raw ProductX models, resolves their graph relationships to get 
         catalog item names, and returns fully hydrated ProductXDTOs.
         """
-        products_result = await self.execute_query(query)
+        products_result = await self.execute_query(query=query, observatory_id=observatory_id,skip=skip,limit=limit)
         if products_result.is_err:
             return Err(products_result.unwrap_err())
         
@@ -929,26 +1010,26 @@ class SearchService:
             if isinstance(path, list):
                 return len(path) == 0 or (len(path) == 1 and path[0] == "*")
             return path == "*" or path == ""
-    async def execute_query(self, query_str: str, observatory_id: Optional[str] = None) -> Result[List[M.ProductX], EX.JubError]:
+    async def execute_query(self, query: str, observatory_id: Optional[str] = None,skip:int= 0,limit:int=10) -> Result[List[M.ProductX], EX.JubError]:
         """
         The main entry point for the Jub search bar.
         """
         try:
             # 1. Parse string to AST
-            ast = QueryAST.parse(query_str)
-            print("AST",ast)
+            ast = QueryAST.parse(query)
+            # print("AST",ast)
             # 2. Resolve AST conditions into required sets of Catalog Item IDs
             required_sets_res = await self._build_required_sets(ast)
             print(required_sets_res)
 
-            print("_"*20)
+            # print("_"*20)
             if required_sets_res.is_err:
                 return required_sets_res
             
             required_sets = required_sets_res.unwrap()
             
             # 3. Build and execute the aggregation pipeline
-            pipeline = self._build_mongo_pipeline(observatory_id, required_sets)
+            pipeline = self._build_mongo_pipeline(observatory_id, required_sets,skip,limit)
             
             cursor = self.observatory_product_link_repository.collection.aggregate(pipeline)
             documents = await cursor.to_list(length=None)
@@ -958,7 +1039,7 @@ class SearchService:
             return Ok(products)
             
         except Exception as e:
-            log.error(f"Execution failed for query '{query_str}': {e}")
+            log.error(f"Execution failed for query '{query}': {e}")
             return Err(EX.JubError.from_exception(e))
 
     async def _build_required_sets(self, ast: QueryAST) -> Result[List[List[str]], EX.JubError]:
@@ -1141,7 +1222,12 @@ class SearchService:
             log.error(f"Error resolving condition {condition}: {e}")
             return Err(EX.JubError.from_exception(e))
 
-    def _build_mongo_pipeline(self, observatory_id: Optional[str], required_sets: List[List[str]]) -> List[dict]:
+    def _build_mongo_pipeline(self,
+        observatory_id: Optional[str],
+        required_sets: List[List[str]],
+        skip:int = 0,
+        limit:int = 10
+    ) -> List[dict]:
         """
         Translates the required_sets into a high-performance MongoDB intersection pipeline.
         If observatory_id is None, it searches across all observatories.
@@ -1200,6 +1286,11 @@ class SearchService:
                 }
             })
 
+        if skip > 0:
+            pipeline.append({"$skip": skip})
+            
+        if limit > 0:
+            pipeline.append({"$limit": limit})
         # 5. Fetch the actual product metadata for the surviving IDs
         pipeline.extend([
             {"$lookup": {

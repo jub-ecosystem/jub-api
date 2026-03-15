@@ -25,6 +25,30 @@ class ProductsRepository(BaseRepository[M.ProductX]):
 class CatalogsRepository(BaseRepository[M.CatalogX]):
     def __init__(self, collection: Collection):
         super().__init__(collection, M.CatalogX, "catalog_id")
+    async def get_catalog_by_catalog_type(self, catalog_type:str)->Result[List[M.CatalogX],EX.JubError]:
+        try: 
+            result = self.collection.find({"catalog_type": catalog_type})
+            items = await result.to_list(length=None)
+            models:List[M.CatalogX] = []
+            for item in items:
+                m = M.CatalogX(
+                    catalog_id        = item.get('catalog_id',""),
+                    catalog_type      = item.get('catalog_type',""),
+                    description       = item.get('description',""),
+                    level             = item.get('level',0),
+                    name              = item.get('name',""),
+                    value             = item.get('value',""),
+                    parent_catalog_id = item.get('parent_catalog_id',None),
+                    root_group_id     = item.get('root_group_id',None),
+                    created_at        = item.get('created_at',DT.datetime.now(DT.timezone.utc) ),
+                    updated_at        = item.get('updated_at',DT.datetime.now(DT.timezone.utc) )
+                )
+                models.append(m)
+                
+                # log.info(f"Found Catalog: {item}")
+            return Ok(models)
+        except Exception as e:
+            return Err(EX.JubError.from_exception(e))
 
 
 class CatalogItemsRepository(BaseRepository[M.CatalogItemX]):
@@ -46,6 +70,7 @@ class CatalogItemsRepository(BaseRepository[M.CatalogItemX]):
             except Exception as e:
                 log.error(f"Error querying catalog items by value '{search_value}': {e}")
                 return []
+
     async def find_by_temporal_operator(self, mongo_op: str, target_date: str) -> List[M.CatalogItemX]:
             """
             Finds catalog items based on a temporal operator and date.
