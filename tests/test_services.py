@@ -10,14 +10,13 @@ from jubapi.db import CollectionNames
 async def db():
     """Provides a clean test database."""
     client = MongoClient("mongodb://localhost:27027/")
-    db = client["jub_test"]
+    db = client["jub_test_1"]
     yield db
-    await client.drop_database('jub_test')
+    await client.drop_database('jub_test_1')
 
 @pytest.fixture(scope="function")
 async def services(db):
     """Initializes all required repositories and services."""
-    # 1. Repositories
     observatory_repository        = R.ObservatoriesRepository(db[CollectionNames.OBSERVATORIES.value])
     product_repository            = R.ProductsRepository(db[CollectionNames.PRODUCTS.value])
     catalog_repository            = R.CatalogsRepository(db[CollectionNames.CATALOGS.value])
@@ -33,7 +32,21 @@ async def services(db):
         catalog_item_catalog_alias_link_repository = R.CatalogItemToCatalogAliasLinkRepository(db[CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value]),
         observatory_catalog_link_repository        = R.ObservatoryToCatalogLinkRepository(db[CollectionNames.OBSERVATORY_CATALOG_LINKS.value])
     )
-    
+    search_service = S.SearchService(
+        observatory_product_link_repository        = link_manager.observatory_product_link_repository,
+        product_catalog_item_link_repository       = link_manager.product_catalog_item_link_repository,
+        catalog_item_relationship_repository       = link_manager.catalog_item_relationship_repository,
+        catalog_item_repository                    = catalog_item_repository,
+        product_repository                         = product_repository,
+        catalog_alias_repository                   = catalog_item_value_repository,
+        catalog_item_catalog_alias_link_repository = link_manager.catalog_item_catalog_alias_link_repository,
+        observatory_catalog_link_repository        = link_manager.observatory_catalog_link_repository,
+        catalog_catalog_item_link_repository       = link_manager.catalog_catalog_item_link_repository,
+        observatory_repository                     = observatory_repository,
+        catalog_repository                         = catalog_repository
+
+    )
+
     # 3. Services
     return {
         "catalog": S.CatalogService(catalog_repository, catalog_item_repository, catalog_item_value_repository, link_manager),
@@ -44,6 +57,7 @@ async def services(db):
             product_repository                  = product_repository,
             graph_link_manager                  = link_manager
         ),
+        "search": search_service,
         "db": db # Passed for direct assertions
     }
 
@@ -180,7 +194,7 @@ async def test_full_observatory_workflow(services):
     r3 = await catalog_service.add_item_to_catalog("cat_mun", vic, parent_id="TAM")
     assert r3.is_ok, f"Failed to add Ciudad Victoria to municipality catalog: {r3.unwrap_err()}"
     for alias in vic_aliases:
-        r_alias = await catalog_service.add_value_to_item("VIC",  alias)
+        r_alias = await catalog_service.add_alias_to_catalog_item("VIC",  alias)
         assert r_alias.is_ok, f"Failed to add alias {alias.value} to Ciudad Victoria: {r_alias.unwrap_err()}"
 
     # CIE10: C (Neoplasms) -> C50 (Breast Cancer)
@@ -229,17 +243,20 @@ async def test_full_observatory_workflow(services):
     query_str = "jub.v1.VS(MX.TAM.*)"
     
     print(f"Query string: {query_str}")
-    search_service = S.SearchService(
-        observatory_product_link_repository        = observatory_service.graph_link_manager.observatory_product_link_repository,
-        product_catalog_item_link_repository       = observatory_service.graph_link_manager.product_catalog_item_link_repository,
-        catalog_item_relationship_repository       = observatory_service.graph_link_manager.catalog_item_relationship_repository,
-        catalog_item_repository                    = catalog_service.catalog_item_repository,
-        product_repository                         = product_service.product_repository,
-        catalog_alias_repository                   = catalog_service.catalog_item_alias_repository,
-        catalog_item_catalog_alias_link_repository = observatory_service.graph_link_manager.catalog_item_catalog_alias_link_repository,
-        catalog_catalog_item_link_repository= observatory_service.graph_link_manager.catalog_catalog_item_link_repository,
-        observatory_catalog_link_repository = observatory_service.graph_link_manager.observatory_catalog_link_repository
-    )
+    search_service: S.SearchService = services["search"]
+    # search_service = S.SearchService(
+    #     observatory_product_link_repository        = observatory_service.graph_link_manager.observatory_product_link_repository,
+    #     product_catalog_item_link_repository       = observatory_service.graph_link_manager.product_catalog_item_link_repository,
+    #     catalog_item_relationship_repository       = observatory_service.graph_link_manager.catalog_item_relationship_repository,
+    #     catalog_item_repository                    = catalog_service.catalog_item_repository,
+    #     product_repository                         = product_service.product_repository,
+    #     catalog_alias_repository                   = catalog_service.catalog_item_alias_repository,
+    #     catalog_item_catalog_alias_link_repository = observatory_service.graph_link_manager.catalog_item_catalog_alias_link_repository,
+    #     catalog_catalog_item_link_repository= observatory_service.graph_link_manager.catalog_catalog_item_link_repository,
+    #     observatory_catalog_link_repository = observatory_service.graph_link_manager.observatory_catalog_link_repository,
+    #     observatory_repository = observatory_repository,
+    #     catalog_repository = catalog_repository
+    # )
 
     search_res = await search_service.execute_query(query_str, "obs_breast_cancer")
     assert search_res.is_ok, f"Search query failed: {search_res.unwrap_err()}"   

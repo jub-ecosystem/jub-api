@@ -45,8 +45,9 @@ async def services(db):
         catalog_alias_repository                   = catalog_item_value_repository,
         catalog_item_catalog_alias_link_repository = link_manager.catalog_item_catalog_alias_link_repository,
         observatory_catalog_link_repository        = link_manager.observatory_catalog_link_repository,
-        catalog_catalog_item_link_repository= link_manager.catalog_catalog_item_link_repository,
-        observatory_repository= observatory_repository
+        catalog_catalog_item_link_repository       = link_manager.catalog_catalog_item_link_repository,
+        observatory_repository                     = observatory_repository,
+        catalog_repository                         = catalog_repository
 
 
     )
