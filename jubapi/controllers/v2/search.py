@@ -15,7 +15,7 @@ log = Log(
 router = APIRouter(prefix="/search", tags=["search"])
 
 
-@router.post("/")
+@router.post("")
 async def search(query:DTO.SearchQueryDTO, search:S.SearchService = Depends(M.get_search_service)):
     result = await search.search(query=query.query, observatory_id=query.observatory_id, limit=query.limit, skip=query.skip)
 
@@ -33,7 +33,7 @@ async def search(query:DTO.SearchQueryDTO, search:S.SearchService = Depends(M.ge
 
 
 @router.post("/observatories")
-async def search(query:DTO.SearchQueryDTO, search:S.SearchService = Depends(M.get_search_service)):
+async def search_observatories(query:DTO.SearchQueryDTO, search:S.SearchService = Depends(M.get_search_service)):
     result = await search.search_observatories(query=query.query)
     if result.is_err:
         log.error({

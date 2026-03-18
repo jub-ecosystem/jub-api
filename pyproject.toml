@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "jubapi"
-version = "0.1.0"
+version = "0.0.1a2"
 description = ""
 authors = ["Ignacio Castillo <ignacio.bcastillo@gmail.com>"]
 readme = "README.md"

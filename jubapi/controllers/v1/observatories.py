@@ -1,4 +1,3 @@
-import os
 import time as T
 from typing import List
 from fastapi import APIRouter,Depends
@@ -6,7 +5,7 @@ from fastapi import Response
 # 
 from jubapi.dto.v1.observatory import ObservatoryDTO,LevelCatalogDTO
 from jubapi.repositories.v1.observatory import ObservatoriesRepository
-from jubapi.db import get_collection
+from jubapi.db import get_collection,CollectionNames
 from jubapi.services.v1 import ObservatoriesService
 from jubapi.log.log import Log
 import jubapi.config as CX
@@ -20,7 +19,7 @@ router = APIRouter()
 
 
 def get_service()->ObservatoriesService:
-    collection =  get_collection(name="observatories")
+    collection =  get_collection(name=CollectionNames.OBSERVATORIES_V1.value)
     repository = ObservatoriesRepository(collection= collection)
     service = ObservatoriesService(repository= repository)
     return service
@@ -41,7 +40,7 @@ async def create_observatory(
     start_time = T.time()
     exists = await observatory_service.find_by_obid(obid= observatory.obid)
     if exists.is_ok:
-        return Response(content="Observatory(key={}) already exists.".format(observatory.key), status_code=403)
+        return Response(content="Observatory(obid={}) already exists.".format(observatory.obid), status_code=403)
     observatory.image_url="https://ivoice.live/wp-content/uploads/2019/12/no-image-1.jpg"
     result = await observatory_service.create(observatory=observatory)
     if result.is_err:
@@ -80,7 +79,7 @@ async def delete_observatory_by_obid(obid:str, observatory_service:Observatories
         response_model=None,
         status_code=204
         )
-async def update_catalogs_by_obid(obid:str, catalogs:List[LevelCatalogDTO]=[], observatory_service:ObservatoriesRepository = Depends(get_service)):
+async def update_catalogs_by_obid(obid:str, catalogs:List[LevelCatalogDTO]=[], observatory_service:ObservatoriesService = Depends(get_service)):
     if len(catalogs)==0:
         return Response(status_code=204)
     result = await observatory_service.update_catalogs(obid=obid,catalogs=catalogs)

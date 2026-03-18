@@ -1,6 +1,7 @@
 
 from option import Result,Ok,Err
 from  typing import List,Dict,Any
+import os
 # 
 from jubapi.repositories.v1.products import ProductsRepository
 from jubapi.repositories.v1.observatory import ObservatoriesRepository
@@ -12,7 +13,12 @@ from jubapi.dto.v1 import ProductFilter
 from jubapi.models.v1 import LevelCatalog, Observatory,Catalog,CatalogItem,Product,Level
 from jubapi.errors import JubError,AlreadyExists,NotFound,UnknownError
 from bson import ObjectId
+from jubapi.log.log import Log
 
+L = Log(
+    name = __name__,
+    path = os.environ.get("JUB_LOG_PATH","/log"),
+)
 
 
 
@@ -66,7 +72,7 @@ class CatalogsService:
                 )
             return x
         except Exception as e:
-            return Err(e)
+            return Err(JubError.from_exception(e))
     async def find_by_cid(self,cid:str)->Result[CatalogDTO,JubError]:
         """
         Retrieves a catalog's full details by its unique Catalog ID.
@@ -75,7 +81,7 @@ class CatalogsService:
             cid (str): The unique identifier of the catalog to search for.
 
         Returns:
-            Result[CatalogDTO, OcaError]: An 'Ok' containing the CatalogDTO if found,
+            Result[CatalogDTO, JubError]: An 'Ok' containing the CatalogDTO if found,
             or an 'Err' wrapping a NotFound error if it does not exist.
         """
 
@@ -85,8 +91,8 @@ class CatalogsService:
                 return Err(NotFound(detail=f"Catalog(cid={cid}) not found.",))
             return Ok(x.unwrap())
         except Exception as e:
-            return Err(e)
-    async def find_all(self,query:Dict[str,Any]={},skip:int =0, limit:str=100)->Result[List[CatalogDTO], Exception]:
+            return Err(JubError.from_exception(e))
+    async def find_all(self,query:Dict[str,Any]={},skip:int =0, limit:str=100)->Result[List[CatalogDTO], JubError]:
         """
         Fetches a paginated list of catalogs matching the provided query filters.
 
@@ -96,7 +102,7 @@ class CatalogsService:
             limit (str, optional): Maximum number of documents to return. Defaults to 100.
 
         Returns:
-            Result[List[CatalogDTO], Exception]: An 'Ok' wrapping the list of matching catalogs,
+            Result[List[CatalogDTO], JubError]: An 'Ok' wrapping the list of matching catalogs,
             or an 'Err' if a database exception occurs.
 
         """
@@ -104,8 +110,11 @@ class CatalogsService:
             xs = await self.repository.find_all(query=query, skip=skip, limit=limit)
             return Ok(xs)
         except Exception as e:
-            return Err(e)
-    async def delete_by_cid(self, cid:str)->Result[str, Exception]:
+            L.error({
+                "msg":str(e)
+            })
+            return Err(JubError.from_exception(e))
+    async def delete_by_cid(self, cid:str)->Result[str, JubError]:
         """
         Permanently removes a catalog from the database using its ID.
 
@@ -113,14 +122,14 @@ class CatalogsService:
             cid(str): THe unique identifier of the catalog to delete.
 
         Returns:
-            Result[str, Exception]: An 'Ok' with the deleted cid if successful, or
+            Result[str, JubError]: An 'Ok' with the deleted cid if successful, or
             an 'Err' if the deletion process enconters an issue.
         """
         try:
             x = await self.repository.delete_by_cid(cid=cid)
             return Ok(cid)
         except Exception as e:
-            return Err(e)
+            return Err(JubError.from_exception(e))
 
     
     # async def create(self,observatory:)->Result[str,OcaError]:
@@ -160,7 +169,7 @@ class ObservatoriesService:
         try:
             exists = await self.repository.find_by_obid(obid= observatory.obid)
             if exists.is_some:
-                return Err(AlreadyExists(detail="Observatory(key={}) already exists.".format(observatory.key) ))
+                return Err(AlreadyExists(detail="Observatory(obid={}) already exists.".format(observatory.obid) ))
             observatory.image_url="https://ivoice.live/wp-content/uploads/2019/12/no-image-1.jpg"
             model = Observatory(
                 obid=observatory.obid,

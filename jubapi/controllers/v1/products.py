@@ -5,7 +5,7 @@ from fastapi import APIRouter,Depends,Response
 from jubapi.repositories.v1.products import ProductsRepository
 from jubapi.repositories.v1.observatory import ObservatoriesRepository
 from jubapi.repositories.v1.catalog import CatalogsRepository
-from jubapi.db import get_collection
+from jubapi.db import get_collection,CollectionNames
 from jubapi.services.v1 import ProductsService,ObservatoriesService,CatalogsService
 from jubapi.dto.v1.product import ProductDTO
 from jubapi.dto.v1 import ProductFilter
@@ -22,14 +22,14 @@ router = APIRouter()
 
 
 def get_service()->ProductsService:
-    collection =  get_collection(name="products")
+    collection =  get_collection(name=CollectionNames.PRODUCTS_V1.value)
     repository = ProductsRepository(collection= collection)
     # 
-    collection =  get_collection(name="observatories")
+    collection =  get_collection(name=CollectionNames.OBSERVATORIES_V1.value)
     repository1 = ObservatoriesRepository(collection= collection)
     service1 = ObservatoriesService(repository= repository1)
     # 
-    collection =  get_collection(name="catalogs")
+    collection =  get_collection(name=CollectionNames.CATALOGS_V1.value)
     repository2 = CatalogsRepository(collection= collection)
     service2 = CatalogsService(repository= repository2)
     # 

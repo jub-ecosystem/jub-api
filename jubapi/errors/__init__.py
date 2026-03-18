@@ -38,8 +38,8 @@ class JubError(Exception):
         """
         return JubError(status_code=500, detail=str(exc))
 
-    @staticmethod
-    def to_http_exception(jub_error: 'JubError') -> HTTPException:
+    # @staticmethod
+    def to_http_exception(self) -> HTTPException:
         """
         Converts a JubError into a FastAPI HTTPException.
         
@@ -49,7 +49,7 @@ class JubError(Exception):
         Returns:
             HTTPException: The corresponding FastAPI HTTP exception.
         """
-        return HTTPException(status_code=jub_error.status_code, detail=jub_error.detail, headers=jub_error.metadata)
+        return HTTPException(status_code=self.status_code, detail=self.detail, headers=self.metadata)
 
 class UnknownError(JubError):
     """Represents an unknown or internal server error (HTTP 500)."""

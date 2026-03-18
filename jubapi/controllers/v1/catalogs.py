@@ -1,4 +1,3 @@
-import os
 import time as T
 from typing import List
 from fastapi import APIRouter,Depends,Response,HTTPException
@@ -6,7 +5,7 @@ from jubapi.dto.v1.catalog import CatalogDTO
 from jubapi.services.v1 import CatalogsService
 # 
 from jubapi.repositories.v1.catalog import CatalogsRepository
-from jubapi.db import get_collection
+from jubapi.db import get_collection,CollectionNames
 from jubapi.services.v1 import CatalogsService
 from jubapi.log.log import Log
 import jubapi.config as CX
@@ -20,7 +19,7 @@ log = Log(
 router = APIRouter(prefix="/catalogs", tags=["catalogs"])
 
 def get_service()->CatalogsService:
-    collection = get_collection(name="catalogs")
+    collection = get_collection(name=CollectionNames.CATALOGS_V1.value)
     repository = CatalogsRepository(collection= collection)
     service    = CatalogsService(repository= repository)
     return service

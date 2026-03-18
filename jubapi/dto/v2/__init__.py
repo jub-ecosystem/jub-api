@@ -75,3 +75,52 @@ class CatalogXDTO(BaseModel):
             created_at        = model.created_at.isoformat(),
             updated_at        = model.updated_at.isoformat()
         )
+
+
+# from pydantic import BaseModel, Field
+# from typing import List, Optional
+
+# --- ALIASES & ITEMS ---
+class AliasDTO(BaseModel):
+    alias_id: str
+    value: str
+    description: str = ""
+
+class CatalogItemDTO(BaseModel):
+    catalog_item_id: str
+    name: str
+    value: str
+    code: int
+    value_type: str
+    description: str = ""
+    parent_id: Optional[str] = None
+    temporal_value: Optional[str] = None
+    aliases: List[AliasDTO] = Field(default_factory=list)
+
+# --- ROOT ENTITIES ---
+class CatalogDTO(BaseModel):
+    catalog_id: str
+    value: str
+    catalog_type: str
+    name: str
+    description: str = ""
+    items: List[CatalogItemDTO] = Field(default_factory=list)
+
+class ObservatoryDTO(BaseModel):
+    observatory_id: str
+    title: str
+    description: str = ""
+    linked_catalogs: List[str] = Field(default_factory=list)
+
+class ProductDTO(BaseModel):
+    product_id: str
+    obs_id: str
+    name: str
+    description: str = ""
+    tags: List[str] = Field(default_factory=list)
+
+# --- MAIN PAYLOAD ---
+class JubFile(BaseModel):
+    catalogs: List[CatalogDTO] = Field(default_factory=list)
+    observatories: List[ObservatoryDTO] = Field(default_factory=list)
+    products: List[ProductDTO] = Field(default_factory=list)
