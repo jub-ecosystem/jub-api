@@ -27,6 +27,6 @@ COPY jubapi /app/jubapi
 # Install Python dependencies using Poetry
 RUN poetry config virtualenvs.create false
 RUN poetry lock
-RUN poetry install --no-interaction --no-ansi
+RUN poetry install --without docs --no-interaction --no-ansi
 # RUN poetry install --no-interaction --no-ansi
 
