@@ -5,14 +5,15 @@ from fastapi import Response
 # 
 from jubapi.dto.v1.observatory import ObservatoryDTO,LevelCatalogDTO
 from jubapi.repositories.v1.observatory import ObservatoriesRepository
-from jubapi.db import get_collection,CollectionNames
+from jubapi.db import get_collection
+from jubapi.db.constants import CollectionNames
 from jubapi.services.v1 import ObservatoriesService
 from jubapi.log.log import Log
-import jubapi.config as CX
+import jubapi.config as Cfg
 log = Log(
     name                   = __name__,
-    path                   = CX.JUB_LOG_PATH,
-    console_handler_filter = lambda x : CX.JUB_LOG_DEBUG
+    path                   = Cfg.JUB_LOG_PATH,
+    console_handler_filter = lambda x : Cfg.JUB_LOG_DEBUG
 )
 
 router = APIRouter()
