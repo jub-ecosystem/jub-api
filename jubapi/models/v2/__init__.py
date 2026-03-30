@@ -141,3 +141,116 @@ class CatalogItemRelationship(TimestampedModel):
     child_id: str  # e.g., ID for "SLP"
   
 
+# ==========================================
+# 1. ENUMS FOR STRICT VALIDATION
+# ==========================================
+class ThemeEnum(str, Enum):
+    LIGHT = "light"
+    DARK = "dark"
+    SYSTEM = "system"
+
+class ViewModeEnum(str, Enum):
+    GRID = "grid"      # Cuadrícula
+    LIST = "list"      # Lista
+
+class ExportFormatEnum(str, Enum):
+    JSON = "json"
+    YML = "yml"        # For exporting DSL queries
+
+# ==========================================
+# 2. CONFIGURATION SUB-MODELS
+# ==========================================
+class AppearanceSettings(BaseModel):
+    theme: ThemeEnum = Field(
+        default=ThemeEnum.SYSTEM, 
+        description="User interface theme preference (Light, Dark, or System default)"
+    )
+    reduce_animations: bool = Field(
+        default=False, 
+        description="Improves performance on lower-end devices"
+    )
+    font_size: int = Field(
+        default=14, 
+        ge=10, le=24, # Added min/max limits for safety
+        description="Base font size for the application"
+    )
+
+class ExplorationSettings(BaseModel):
+    items_per_page: int = Field(
+        default=24, 
+        ge=10, le=100, # Added min/max limits for safety
+        description="Number of results to display per page"
+    )
+    default_view: ViewModeEnum = Field(
+        default=ViewModeEnum.GRID, 
+        description="Default view mode (Grid or List)"
+    )
+    enable_tutorial: bool = Field(
+        default=True,
+        description="Show onboarding tutorial for new users"
+    )
+
+class ExportSettings(BaseModel):
+    default_format: ExportFormatEnum = Field(
+        default=ExportFormatEnum.YML, 
+        description="Default format for exporting products or queries"
+    )
+    include_metadata:bool = Field(
+       default=False,
+       description="This includes metadata on the exported formats"
+    )
+
+# Group all settings together
+class UserPreferences(BaseModel):
+    appearance: AppearanceSettings = Field(default_factory=AppearanceSettings)
+    exploration: ExplorationSettings = Field(default_factory=ExplorationSettings)
+    export: ExportSettings = Field(default_factory=ExportSettings)
+    @staticmethod
+    def default()->'UserPreferences':
+        return UserPreferences(
+            appearance=AppearanceSettings(),
+            exploration=ExplorationSettings(),
+            export=ExportSettings()
+        )
+       
+
+# ==========================================
+# 3. THE MAIN USER PROFILE MODEL
+# ==========================================
+class UserProfileX(TimestampedModel):
+    """
+    Core model representing a user and their settings in the database.
+    """
+    user_id: str = Field(..., description="Unique identifier for the user")
+    username: str = Field(..., description="Display name of the user")
+    email: str = Field(..., description="Email address of the user")
+    first_name: Optional[str] = Field(default=None, description="User's first name")
+    last_name: Optional[str] = Field(default=None, description="User's last name")
+    fullname: Optional[str] = Field(default=None, description="User's full name")
+    disabled: bool = Field(default=False, description="Indicates if the user's account is disabled")
+    settings: UserPreferences = Field(default_factory=UserPreferences)
+    @staticmethod
+    def from_doc(doc: Dict) -> 'UserProfileX':
+        settings_doc = doc.get('settings', {})
+
+        appearance = AppearanceSettings.model_validate(settings_doc.get('appearance', {}))
+        exploration = ExplorationSettings.model_validate(settings_doc.get('exploration', {}))
+        export = ExportSettings.model_validate(settings_doc.get('export', {}))
+
+        settings = UserPreferences(
+           appearance=appearance,
+           exploration=exploration,
+           export=export
+        )
+        return UserProfileX(
+            user_id    = str(doc.get("user_id")),
+            username   = doc.get('username', ''),
+            email      = doc.get('email', ''),
+            first_name = doc.get('first_name'),
+            last_name  = doc.get('last_name'),
+            fullname   = doc.get('fullname'),
+            disabled   = doc.get('disabled', False),
+            settings   = settings,
+            created_at = doc.get('created_at', DT.datetime.now(DT.timezone.utc)),
+            updated_at = doc.get('updated_at', DT.datetime.now(DT.timezone.utc))
+        )

@@ -51,6 +51,17 @@ class JubError(Exception):
         """
         return HTTPException(status_code=self.status_code, detail=self.detail, headers=self.metadata)
 
+class ForbiddenError(JubError):
+    """Represents a forbidden access error (HTTP 403)."""
+    def __init__(self,detail: Any = None, headers: Dict[str, str]  = None) -> None:
+        """
+        Initializes the ForbiddenError.
+
+        Args:
+            detail (Any, optional): The error message or details. Defaults to None.
+            headers (Dict[str, str], optional): Additional HTTP headers. Defaults to None.
+        """
+        super().__init__(403, detail, headers)
 class UnknownError(JubError):
     """Represents an unknown or internal server error (HTTP 500)."""
     def __init__(self,detail: Any = None, headers: Dict[str, str]  = None) -> None:
@@ -93,6 +104,30 @@ class AlreadyExists(JubError):
     def __init__(self,detail: Any = None, headers: Dict[str, str] = None) -> None:
         """
         Initializes the AlreadyExists error.
+
+        Args:
+            detail (Any, optional): The error message or details. Defaults to None.
+            headers (Dict[str, str], optional): Additional HTTP headers. Defaults to None.
+        """
+        super().__init__(403, detail, headers)
+
+class InvalidCredentialsError(JubError):
+    """Represents an authentication error due to invalid credentials (HTTP 401)."""
+    def __init__(self,detail: Any = None, headers: Dict[str, str] = None) -> None:
+        """
+        Initializes the InvalidCredentialsError.
+
+        Args:
+            detail (Any, optional): The error message or details. Defaults to None.
+            headers (Dict[str, str], optional): Additional HTTP headers. Defaults to None.
+        """
+        super().__init__(401, detail, headers)
+
+class AuthorizationError(JubError):
+    """Represents an authorization error where the user lacks permissions (HTTP 403)."""
+    def __init__(self,detail: Any = None, headers: Dict[str, str] = None) -> None:
+        """
+        Initializes the AuthorizationError.
 
         Args:
             detail (Any, optional): The error message or details. Defaults to None.

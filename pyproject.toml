@@ -7,7 +7,6 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4"
-fastapi = "^0.111.1"
 uvicorn = "^0.30.4"
 pymongo = "^4.8.0"
 option = "^2.1.0"
@@ -15,7 +14,10 @@ nanoid = "^2.0.0"
 pydantic = "^2.8.2"
 motor = "^3.6.0"
 pyparsing = "^3.2.0"
-xolo = "0.0.10a16"
+python-multipart = "^0.0.22"
+httpx = "^0.28.1"
+commonx = {version = "0.0.1a3", allow-prereleases = true, source = "test"}
+xolo = {version = "0.0.11a2", allow-prereleases = true, source = "test"}
 
 
 [tool.poetry.group.dev.dependencies]
@@ -34,7 +36,7 @@ zensical = "^0.0.24"
 [[tool.poetry.source]]
 name = "test"
 url = "https://test.pypi.org/simple/"
-priority = "supplemental"
+priority = "explicit"
 
 [build-system]
 requires = ["poetry-core"]

@@ -1,25 +1,80 @@
 from pymongo.results import UpdateResult,DeleteResult
 from typing import List,Optional,Tuple,Dict,Any
-
-from pytest import skip
 import jubapi.models.v2 as M
 import asyncio
 import jubapi.repositories.v2 as R
 import jubapi.dto.v2 as DTO
+import commonx.dto.xolo as XoloDTO
 from jubapi.querylang.v2.parser  import QueryAST,Condition,ConditionOperators
 from jubapi.log.log import Log
 import jubapi.errors as EX
-from jubapi.db import CollectionNames
-
+from jubapi.db.constants import CollectionNames
 from option import Result,Ok,Err
 import os
 import datetime as DT
+from xolo.client.client import XoloClient
 
-log = Log(
+L = Log(
     name = __name__,
     path = os.environ.get("JUB_LOG_PATH", "/log"),
 )
 
+
+class AuthenticationService:
+    def __init__(self):
+        self.xolo = XoloClient(
+            api_url=os.environ.get("XOLO_API_URL", "http://localhost:10000/api/v4"),
+            secret=os.environ.get("XOLO_SECRET_KEY")
+        )
+    async def login(self, dto: XoloDTO.AuthAttemptDTO) -> Result[XoloDTO.AuthenticatedDTO, EX.JubError]:
+        try:
+            res = self.xolo.auth(
+                username    = dto.username,
+                password    = dto.password,
+                scope       = dto.scope,
+                expiration  = dto.expiration,
+                renew_token = dto.renew_token
+            )
+            if res.is_err:
+                L.error(f"Xolo login failed: {res.unwrap_err()}")
+                return Err(EX.JubError(f"Xolo login failed: {res.unwrap_err()}"))
+            response = res.unwrap()
+            return Ok(response)
+        except Exception as e:
+            L.error(f"Error during login: {e}")
+            return Err(EX.JubError.from_exception(e))
+        
+    async def signup(self, 
+        first_name: str,
+        last_name: str,
+        scope: str,
+        username: str,
+        email: str,
+        password: str,
+        expiration:Optional[str] = "1h",
+        profile_photo: Optional[str]="",
+    ) -> Result[XoloDTO.CreatedUserResponseDTO, EX.JubError]:
+        try:
+            res = self.xolo.signup(
+                username      = username,
+                first_name    = first_name,
+                last_name     = last_name,
+                email         = email,
+                password      = password,
+                scope         = scope,
+                expiration    = expiration,
+                profile_photo = profile_photo,
+            )
+            if res.is_err:
+                L.error(f"Xolo signup failed: {res.unwrap_err()}")
+                return Err(EX.JubError(f"Xolo signup failed: {res.unwrap_err()}"))
+            response = res.unwrap()
+
+            return Ok(response)
+        except Exception as e:
+            L.error(f"Error during signup: {e}")
+            return Err(EX.JubError.from_exception(e))
+    
 class GraphLinkManager:
     """
     Centralized manager for severing edges in the Jub graph.
@@ -49,7 +104,7 @@ class GraphLinkManager:
             product_ids = [doc["product_id"] for doc in results]
             return Ok(product_ids)
         except Exception as e:
-            log.error(f"Error getting products linked to observatory: {e}")
+            L.error(f"Error getting products linked to observatory: {e}")
             return Err(EX.JubError.from_exception(e))
 
     async def count_products_linked_to_observatory(self, observatory_id: str) -> Result[int, EX.JubError]:
@@ -57,7 +112,7 @@ class GraphLinkManager:
             count = await self.observatory_product_link_repository.collection.count_documents({"observatory_id": observatory_id})
             return Ok(count)
         except Exception as e:
-            log.error(f"Error counting products linked to observatory: {e}")
+            L.error(f"Error counting products linked to observatory: {e}")
             return Err(EX.JubError.from_exception(e))
         
     async def exists_product_linked_to_observatory(self, observatory_id: str, product_id:str) -> Result[bool, EX.JubError]:
@@ -65,7 +120,7 @@ class GraphLinkManager:
             count = await self.observatory_product_link_repository.collection.count_documents({"observatory_id": observatory_id, "product_id": product_id})
             return Ok(count > 0)
         except Exception as e:
-            log.error(f"Error checking existence of product linked to observatory: {e}")
+            L.error(f"Error checking existence of product linked to observatory: {e}")
             return Err(EX.JubError.from_exception(e))
         
     async def exists_products_linked_to_observatory(self, observatory_id: str) -> Result[bool, EX.JubError]:
@@ -73,7 +128,7 @@ class GraphLinkManager:
             count = await self.observatory_product_link_repository.collection.count_documents({"observatory_id": observatory_id})
             return Ok(count > 0)
         except Exception as e:
-            log.error(f"Error checking existence of products linked to observatory: {e}")
+            L.error(f"Error checking existence of products linked to observatory: {e}")
             return Err(EX.JubError.from_exception(e))
     
     # _______________________
@@ -84,28 +139,28 @@ class GraphLinkManager:
             catalog_ids = [doc["catalog_id"] for doc in results]
             return Ok(catalog_ids)
         except Exception as e:
-            log.error(f"Error getting catalogs linked to observatory: {e}")
+            L.error(f"Error getting catalogs linked to observatory: {e}")
             return Err(EX.JubError.from_exception(e))
     async def count_catalogs_linked_to_observatory(self, observatory_id: str) -> Result[int, EX.JubError]:
         try:
             count = await self.observatory_catalog_link_repository.collection.count_documents({"observatory_id": observatory_id})
             return Ok(count)
         except Exception as e:
-            log.error(f"Error counting catalogs linked to observatory: {e}")
+            L.error(f"Error counting catalogs linked to observatory: {e}")
             return Err(EX.JubError.from_exception(e))
     async def exists_catalog_linked_to_observatory(self, observatory_id: str, catalog_id:str) -> Result[bool, EX.JubError]:
         try:
             count = await self.observatory_catalog_link_repository.collection.count_documents({"observatory_id": observatory_id, "catalog_id": catalog_id})
             return Ok(count > 0)
         except Exception as e:
-            log.error(f"Error checking existence of catalog linked to observatory: {e}")
+            L.error(f"Error checking existence of catalog linked to observatory: {e}")
             return Err(EX.JubError.from_exception(e))
     async def exists_catalogs_linked_to_observatory(self, observatory_id: str) -> Result[bool, EX.JubError]:
         try:
             count = await self.observatory_catalog_link_repository.collection.count_documents({"observatory_id": observatory_id})
             return Ok(count > 0)
         except Exception as e:
-            log.error(f"Error checking existence of catalogs linked to observatory: {e}")
+            L.error(f"Error checking existence of catalogs linked to observatory: {e}")
             return Err(EX.JubError.from_exception(e))
     # _______________________
     async def get_catalog_items_linked_to_catalog(self, catalog_id: str) -> Result[List[str], EX.JubError]:
@@ -115,28 +170,28 @@ class GraphLinkManager:
             catalog_item_ids = [doc["catalog_item_id"] for doc in results]
             return Ok(catalog_item_ids)
         except Exception as e:
-            log.error(f"Error getting catalog items linked to catalog: {e}")
+            L.error(f"Error getting catalog items linked to catalog: {e}")
             return Err(EX.JubError.from_exception(e))
     async def count_catalog_items_linked_to_catalog(self, catalog_id: str) -> Result[int, EX.JubError]:
         try:
             count = await self.catalog_catalog_item_link_repository.collection.count_documents({"catalog_id": catalog_id})
             return Ok(count)
         except Exception as e:
-            log.error(f"Error counting catalog items linked to catalog: {e}")
+            L.error(f"Error counting catalog items linked to catalog: {e}")
             return Err(EX.JubError.from_exception(e))
     async def exists_catalog_item_linked_to_catalog(self, catalog_id: str, catalog_item_id:str) -> Result[bool, EX.JubError]:
         try:
             count = await self.catalog_catalog_item_link_repository.collection.count_documents({"catalog_id": catalog_id, "catalog_item_id": catalog_item_id})
             return Ok(count > 0)
         except Exception as e:
-            log.error(f"Error checking existence of catalog item linked to catalog: {e}")
+            L.error(f"Error checking existence of catalog item linked to catalog: {e}")
             return Err(EX.JubError.from_exception(e))
     async def exists_catalog_items_linked_to_catalog(self, catalog_id: str) -> Result[bool, EX.JubError]:
         try:
             count = await self.catalog_catalog_item_link_repository.collection.count_documents({"catalog_id": catalog_id})
             return Ok(count > 0)
         except Exception as e:
-            log.error(f"Error checking existence of catalog items linked to catalog: {e}")
+            L.error(f"Error checking existence of catalog items linked to catalog: {e}")
             return Err(EX.JubError.from_exception(e))
     # _______________________
     async def get_catalog_items_linked_to_product(self, product_id: str) -> Result[List[str], EX.JubError]:
@@ -146,28 +201,28 @@ class GraphLinkManager:
             catalog_item_ids = [doc["catalog_item_id"] for doc in results]
             return Ok(catalog_item_ids)
         except Exception as e:
-            log.error(f"Error getting catalog items linked to product: {e}")
+            L.error(f"Error getting catalog items linked to product: {e}")
             return Err(EX.JubError.from_exception(e))
     async def count_catalog_items_linked_to_product(self, product_id: str) -> Result[int, EX.JubError]:
         try:
             count = await self.product_catalog_item_link_repository.collection.count_documents({"product_id": product_id})
             return Ok(count)
         except Exception as e:
-            log.error(f"Error counting catalog items linked to product: {e}")
+            L.error(f"Error counting catalog items linked to product: {e}")
             return Err(EX.JubError.from_exception(e))
     async def exists_catalog_item_linked_to_product(self, product_id: str, catalog_item_id:str) -> Result[bool, EX.JubError]:
         try:
             count = await self.product_catalog_item_link_repository.collection.count_documents({"product_id": product_id, "catalog_item_id": catalog_item_id})
             return Ok(count > 0)
         except Exception as e:
-            log.error(f"Error checking existence of catalog item linked to product: {e}")
+            L.error(f"Error checking existence of catalog item linked to product: {e}")
             return Err(EX.JubError.from_exception(e))
     async def exists_catalog_items_linked_to_product(self, product_id: str) -> Result[bool, EX.JubError]:
         try:
             count = await self.product_catalog_item_link_repository.collection.count_documents({"product_id": product_id})
             return Ok(count > 0)
         except Exception as e:
-            log.error(f"Error checking existence of catalog items linked to product: {e}")
+            L.error(f"Error checking existence of catalog items linked to product: {e}")
             return Err(EX.JubError.from_exception(e))
     # _______________________
 
@@ -182,7 +237,7 @@ class GraphLinkManager:
             )
             return Ok(r)
         except Exception as e:
-            log.error(f"Error linking observatory to product: {e}")
+            L.error(f"Error linking observatory to product: {e}")
             return Err(EX.JubError.from_exception(e))
             # raise EX.JubError(f"Failed to link observatory to product: {str(e)}")
 
@@ -196,7 +251,7 @@ class GraphLinkManager:
             )
             return Ok(r)
         except Exception as e:
-            log.error(f"Error linking observatory to catalog: {e}")
+            L.error(f"Error linking observatory to catalog: {e}")
             return Err(EX.JubError.from_exception(e))
         
 
@@ -210,7 +265,7 @@ class GraphLinkManager:
             )
             return Ok(r)
         except Exception as e:
-            log.error(f"Error linking catalog to item: {e}")
+            L.error(f"Error linking catalog to item: {e}")
             return Err(EX.JubError.from_exception(e))
         
 
@@ -225,7 +280,7 @@ class GraphLinkManager:
             )
             return Ok(r)
         except Exception as e:
-            log.error(f"Error linking product to catalog item: {e}")
+            L.error(f"Error linking product to catalog item: {e}")
             return Err(EX.JubError.from_exception(e))
         
 
@@ -240,7 +295,7 @@ class GraphLinkManager:
             )
             return Ok(r)
         except Exception as e:
-            log.error(f"Error setting item relationship: {e}")
+            L.error(f"Error setting item relationship: {e}")
             return Err(EX.JubError.from_exception(e))
 
     async def link_item_to_alias(self, catalog_item_id: str, catalog_item_alias_id: str)->Result[UpdateResult,EX.JubError]:
@@ -258,7 +313,7 @@ class GraphLinkManager:
             )
             return Ok(r)
         except Exception as e:
-            log.error(f"Error linking item to value: {e}")
+            L.error(f"Error linking item to value: {e}")
             return Err(EX.JubError.from_exception(e))
 
     #  Remove links (called by services when an entity is deleted, to maintain graph integrity)
@@ -269,7 +324,7 @@ class GraphLinkManager:
             r2 = await self.product_catalog_item_link_repository.collection.delete_many({"product_id": product_id})
             return Ok((r1, r2))
         except Exception as e:
-            log.error(f"Error removing all product links: {e}")
+            L.error(f"Error removing all product links: {e}")
             return Err(EX.JubError.from_exception(e))
 
 
@@ -280,7 +335,7 @@ class GraphLinkManager:
             r2 = await self.catalog_catalog_item_link_repository.collection.delete_many({"catalog_id": catalog_id})
             return Ok((r1, r2))
         except Exception as e:
-            log.error(f"Error removing all catalog links: {e}")
+            L.error(f"Error removing all catalog links: {e}")
             return Err(EX.JubError.from_exception(e))
 
     async def remove_all_catalog_item_links(self, catalog_item_id: str)->Result[Tuple[DeleteResult, DeleteResult, DeleteResult, DeleteResult],EX.JubError]:
@@ -300,7 +355,7 @@ class GraphLinkManager:
             ]})
             return Ok((r1, r2, r3, r4))
         except Exception as e:
-            log.error(f"Error removing all catalog item links: {e}")
+            L.error(f"Error removing all catalog item links: {e}")
             return Err(EX.JubError.from_exception(e))
 
     
@@ -330,7 +385,7 @@ class ObservatoriesService:
         """Assigns an existing catalog to this observatory (e.g., SPATIAL or CIE10)."""
         result = await self.graph_link_manager.link_observatory_to_catalog(observatory_id, catalog_id,level)
         if result.is_err:
-            log.error(f"Failed to link catalog {catalog_id} to observatory {observatory_id}: {result.unwrap_err()}")
+            L.error(f"Failed to link catalog {catalog_id} to observatory {observatory_id}: {result.unwrap_err()}")
             return Err(EX.JubError(f"Failed to link catalog {catalog_id} to observatory {observatory_id}: {result.unwrap_err()}"))
         return Ok(True)
     # --- Read Operations (Aggregation) ---
@@ -342,13 +397,13 @@ class ObservatoriesService:
             observatories = [DTO.ObservatoryXDTO.from_model(M.ObservatoryX.from_doc(doc)) for doc in await cursor.to_list(length=None)]
             return Ok(observatories)
         except Exception as e:
-            log.error(f"Error fetching observatories: {e}")
+            L.error(f"Error fetching observatories: {e}")
             return Err(EX.JubError.from_exception(e))
         
     async def get_observatory(self, observatory_id: str) -> Result[DTO.ObservatoryXDTO, EX.JubError]:
         model = await self.observatory_repository.get_by_id(observatory_id) 
         if model.is_err:
-            log.error(f"Error fetching observatory {observatory_id}: {model.unwrap_err()}")
+            L.error(f"Error fetching observatory {observatory_id}: {model.unwrap_err()}")
             return Err(EX.JubError.from_exception(model.unwrap_err()))
         
         return Ok(DTO.ObservatoryXDTO.from_model(model.unwrap()))
@@ -373,7 +428,7 @@ class ObservatoriesService:
         try:
             return Ok([M.ProductX(**doc) for doc in cursor])
         except Exception as e:
-            log.error(f"Error fetching products in observatory: {e}")
+            L.error(f"Error fetching products in observatory: {e}")
             return Err(EX.UnknownError(str(e)))
 
     async def get_catalogs_by_observatory_id(self, observatory_id: str) -> Result[List[M.CatalogX], EX.JubError]:
@@ -411,7 +466,7 @@ class ObservatoriesService:
             return Ok(catalogs)
             
         except Exception as e:
-            log.error({
+            L.error({
                 "message": "Error fetching catalogs for observatory",
                 "error": str(e),
                 "observatory_id": observatory_id
@@ -453,7 +508,7 @@ class CatalogService:
         insert_rest = await self.catalog_item_repository.insert(item)
 
         if insert_rest.is_err:
-            log.error({
+            L.error({
                 "message": "Failed to insert catalog item",
                 "error": insert_rest.unwrap_err(),
                 "catalog_id": catalog_id,
@@ -469,7 +524,7 @@ class CatalogService:
             delete_catalog_item_result = await self.catalog_item_repository.delete(item_id)
 
             if delete_catalog_item_result.is_err:
-                log.error(f"Failed to rollback catalog item after link failure: {delete_catalog_item_result.unwrap_err()}")
+                L.error(f"Failed to rollback catalog item after link failure: {delete_catalog_item_result.unwrap_err()}")
                 return Err(EX.JubError(f"Failed to rollback catalog item after link failure: {delete_catalog_item_result.unwrap_err()}"))
 
             return Err(EX.JubError(f"Failed to link item to catalog: {result.unwrap_err()}"))
@@ -485,7 +540,7 @@ class CatalogService:
         try: 
             val_id_result = await self.catalog_item_alias_repository.insert(value)
             if val_id_result.is_err:
-                log.error(f"Failed to insert catalog item alias: {val_id_result.unwrap_err()}")
+                L.error(f"Failed to insert catalog item alias: {val_id_result.unwrap_err()}")
                 return Err(EX.JubError(f"Failed to insert catalog item alias: {val_id_result.unwrap_err()}"))
             
             val_id = val_id_result.unwrap()
@@ -496,13 +551,13 @@ class CatalogService:
                 delete_alias_result = await self.catalog_item_alias_repository.delete(val_id)
 
                 if delete_alias_result.is_err:
-                    log.error(f"Failed to rollback catalog item alias after link failure: {delete_alias_result.unwrap_err()}")
+                    L.error(f"Failed to rollback catalog item alias after link failure: {delete_alias_result.unwrap_err()}")
                     return Err(EX.JubError(f"Failed to rollback catalog item alias after link failure: {delete_alias_result.unwrap_err()}"))
 
                 return Err(EX.JubError(f"Failed to link alias to catalog item: {res.unwrap_err()}"))
             return Ok(val_id)
         except Exception as e:
-            log.error(f"Error adding value to item: {e}")
+            L.error(f"Error adding value to item: {e}")
             return Err(EX.JubError.from_exception(e))
     
     async def get_catalog_hierarchy_levels(self, root_catalog_id: str) -> Result[List[M.CatalogX], EX.JubError]:
@@ -589,7 +644,7 @@ class ProductService:
         try:
             product_res = await self.product_repository.get_by_id(product_id)
             if product_res.is_err:
-                log.error({
+                L.error({
                     "message": f"Failed to fetch product {product_id}",
                     "error": str(product_res.unwrap_err())
                 })
@@ -610,7 +665,7 @@ class ProductService:
             
             return Ok(product)
         except Exception as e:
-            log.error({
+            L.error({
                 "message": f"Error fetching product by ID: {product_id}",
                 "error": str(e)
             })
@@ -639,7 +694,7 @@ class ProductService:
             for item_id in catalog_item_ids:
                 tag_res = await self.link_manager.link_product_to_catalog_item(product.product_id, item_id)
                 if tag_res.is_err:
-                    log.warning({
+                    L.warning({
                         "message": f"Failed to tag product {product.product_id} with {item_id}",
                         "error": tag_res.unwrap_err()
                     })
@@ -693,19 +748,19 @@ class SearchService:
         matched_catalogs_result = await self.catalog_repository.get_catalog_by_catalog_type(catalog_type=catalog_type)
         # print(f"Matched items result for catalog type '{catalog_type}': {matched_items_result}")
         if matched_catalogs_result.is_err:
-            log.error(f"Error fetching temporal catalogs: {matched_catalogs_result.unwrap_err()}")
+            L.error(f"Error fetching temporal catalogs: {matched_catalogs_result.unwrap_err()}")
             return []
         
         catalog_matched_items = matched_catalogs_result.unwrap()
         matched_items=[]
         if len(catalog_matched_items) == 0:
-            log.warning(f"No catalogs found for {catalog_type} type. Skipping temporal condition.")
+            L.warning(f"No catalogs found for {catalog_type} type. Skipping temporal condition.")
         else:
             first_catalog = catalog_matched_items[0] # Assuming all temporal conditions refer to the same catalog structure
             catalogs_items_result = await self.catalog_catalog_item_link_repository.find_by_ids([first_catalog.catalog_id])
             print("catalogS_items",catalogs_items_result)
             if catalogs_items_result.is_err:
-                log.error(f"Error fetching items for temporal catalog {first_catalog.catalog_id}: {catalogs_items_result.unwrap_err()}")
+                L.error(f"Error fetching items for temporal catalog {first_catalog.catalog_id}: {catalogs_items_result.unwrap_err()}")
                 matched_items = []
             else:
                 catalog_items_links = catalogs_items_result.unwrap()
@@ -726,7 +781,7 @@ class SearchService:
             print("AST",ast)
             for catalog_query in ast.queries:
                 for condition in catalog_query.group.conditions:
-                    log.debug({
+                    L.debug({
                         "message": "Processing condition",
                         "catalog_value": condition.catalog_value,
                         "operator": condition.operator,
@@ -741,7 +796,7 @@ class SearchService:
                         mongo_op = mongo_op_map.get(condition.operator, "$eq")
                         
                         if len(condition.item_path) == 0:
-                            log.warning(f"Condition {condition} has an empty item path. Skipping.")
+                            L.warning(f"Condition {condition} has an empty item path. Skipping.")
                             matched_items = await self.__get_matched_catalog_items_by_catalog_type("TEMPORAL")
                             # matched_items_result = await self.catalog_repository.get_catalog_by_catalog_type(catalog_type="TEMPORAL")
                             # if matched_items_result.is_err:
@@ -773,7 +828,7 @@ class SearchService:
                                 mongo_op=mongo_op, 
                                 target_date=target_date
                             )
-                        log.debug({
+                        L.debug({
                             "message": "Matched temporal condition",
                             "mongo_op": mongo_op,
                             # "target_date": target_date,
@@ -783,14 +838,14 @@ class SearchService:
                         # For SPATIAL, SEX, CIE10, PLOT_TYPE
                         print("Condition",condition)
                         if len(condition.item_path) == 0:
-                            log.warning(f"Condition {condition} has an empty item path. Skipping.")
+                            L.warning(f"Condition {condition} has an empty item path. Skipping.")
                             catalog_type  = "INTEREST" if condition.catalog_value != "SPATIAL" else "SPATIAL"
                             matched_items = await self.__get_matched_catalog_items_by_catalog_type(catalog_type)
                             print("Matched items for empty path condition:", matched_items)
                         else: 
                             leaf_value = condition.item_path[-1] if isinstance(condition.item_path, list) else condition.item_path
                             matched_items = await self.catalog_item_repository.find_by_value(leaf_value)
-                            log.debug({
+                            L.debug({
                                 "message": "Matched non-temporal condition",
                                 "leaf_value": leaf_value,
                                 "matched_items_count": len(matched_items)
@@ -798,7 +853,7 @@ class SearchService:
 
                     print("_"*40)
                     if not matched_items:
-                        log.debug(f"Condition {condition} matched 0 items. No observatories can fulfill this.")
+                        L.debug(f"Condition {condition} matched 0 items. No observatories can fulfill this.")
                         continue
                         # return Ok([])
 
@@ -806,19 +861,19 @@ class SearchService:
                     # We only need to check the first matched item, as all items 
                     # for a single condition belong to the same catalog dimension.
                     first_item_id = matched_items[0].catalog_item_id
-                    log.debug({
+                    L.debug({
                         "message": "Processing first matched item",
                         "first_item_id": first_item_id
                     })
                     # Query the junction repository you mentioned
                     # catalog_links_result = await self.catalog_catalog_item_link_repository.get_by_catalog_item_id(first_item_id)
                     catalog_links_result = await self.catalog_catalog_item_link_repository.get_catalog_id_by_catalog_item_id(first_item_id)
-                    log.debug({
+                    L.debug({
                         "message": "Fetched catalog links",
                         "catalog_links_result": str(catalog_links_result)
                     })
                     if catalog_links_result.is_err:
-                        log.error(f"Item {first_item_id} is orphaned! No catalog link found.")
+                        L.error(f"Item {first_item_id} is orphaned! No catalog link found.")
                         return Err(EX.JubError(f"Database inconsistency: Item {first_item_id} has no catalog."))
 
                     # Add the resolved catalog ID to our required set
@@ -837,7 +892,7 @@ class SearchService:
             # Get observatories linked to the first required catalog
             initial_obs_links_result = await self.observatory_catalog_link_repository.get_by_catalog_id(first_catalog_id)
             if initial_obs_links_result.is_err:
-                log.error(f"Failed to fetch observatories for catalog {first_catalog_id}: {initial_obs_links_result.unwrap_err()}")
+                L.error(f"Failed to fetch observatories for catalog {first_catalog_id}: {initial_obs_links_result.unwrap_err()}")
                 return Err(EX.JubError(f"Failed to fetch observatories for catalog {first_catalog_id}: {initial_obs_links_result.unwrap_err()}"))
             initial_obs_links = initial_obs_links_result.unwrap()
             
@@ -847,7 +902,7 @@ class SearchService:
             for cat_id in catalog_ids_list[1:]:
                 initial_obs_links_result = await self.observatory_catalog_link_repository.get_by_catalog_id(cat_id)
                 if initial_obs_links_result.is_err:
-                    log.error(f"Failed to fetch observatories for catalog {cat_id}: {initial_obs_links_result.unwrap_err()}")
+                    L.error(f"Failed to fetch observatories for catalog {cat_id}: {initial_obs_links_result.unwrap_err()}")
                     return Err(EX.JubError(f"Failed to fetch observatories for catalog {cat_id}: {initial_obs_links_result.unwrap_err()}"))
                 obs_links = initial_obs_links_result.unwrap()
                 obs_ids_for_this_cat = {link.observatory_id for link in obs_links}
@@ -871,7 +926,7 @@ class SearchService:
             dtos = [DTO.ObservatoryXDTO.from_model(obs.unwrap()) for obs in raw_observatories if obs.is_ok]
             return Ok(dtos)
         except Exception as e:
-            log.error({
+            L.error({
                 "message": "Error during observatory search",
                 "error": str(e),                 
                 "query": query
@@ -906,7 +961,7 @@ class SearchService:
         links:List[List[M.CatalogItemToProductLink]] = []
         for l in links_results:
             if l.is_err:
-                log.error(f"Failed to fetch product catalog item links: {l.unwrap_err()}")
+                L.error(f"Failed to fetch product catalog item links: {l.unwrap_err()}")
                 continue
             links.append(l.unwrap())
 
@@ -940,7 +995,7 @@ class SearchService:
         item_lookup= {}
         for item in catalog_items: 
             if item.is_err:
-                log.error(f"Failed to fetch catalog item {item.unwrap_err()}")
+                L.error(f"Failed to fetch catalog item {item.unwrap_err()}")
                 continue
             item_model = item.unwrap()
             item_lookup[item_model.catalog_item_id] = item_model.name
@@ -1001,7 +1056,7 @@ class SearchService:
                 return Ok(raw_target)
                 
             except Exception as e:
-                log.error(f"Error resolving alias for {raw_target}: {e}")
+                L.error(f"Error resolving alias for {raw_target}: {e}")
                 return Err(EX.JubError.from_exception(e))       
     def __is_global_wildcard(self, condition: Condition) -> bool:
             """Checks if the user just passed '*' with no prefix (e.g., VS(*))."""
@@ -1039,7 +1094,7 @@ class SearchService:
             return Ok(products)
             
         except Exception as e:
-            log.error(f"Execution failed for query '{query}': {e}")
+            L.error(f"Execution failed for query '{query}': {e}")
             return Err(EX.JubError.from_exception(e))
 
     async def _build_required_sets(self, ast: QueryAST) -> Result[List[List[str]], EX.JubError]:
@@ -1063,7 +1118,7 @@ class SearchService:
                         # If it's not a global wildcard, we resolve the condition as normal and add its valid tags to the combined set.
                         res = await self._resolve_condition(cond)
                         if res.is_err: 
-                            log.error(f"Failed to resolve condition {cond}: {res.unwrap_err()}")
+                            L.error(f"Failed to resolve condition {cond}: {res.unwrap_err()}")
                             return res
                         # combined_set.extend(res.unwrap())
                         combined_set.update(res.unwrap()) # Using a set to avoid duplicates
@@ -1082,7 +1137,7 @@ class SearchService:
 
                         res = await self._resolve_condition(cond)
                         if res.is_err: 
-                            log.error(f"Failed to resolve condition {cond}: {res.unwrap_err()}")
+                            L.error(f"Failed to resolve condition {cond}: {res.unwrap_err()}")
                             return res
                         conds_ids = set(res.unwrap())
 
@@ -1097,7 +1152,7 @@ class SearchService:
             # print("REQUIRED",required_sets)
             return Ok(required_sets)
         except Exception as e:
-            log.error({
+            L.error({
                 "message": "Error building required sets from AST",
                 "error": str(e),
             })
@@ -1108,7 +1163,7 @@ class SearchService:
         Translates a single AST condition into an exact list of catalog_item_ids.
         """
         try:
-            log.debug({
+            L.debug({
                 "event":"CONDITION_RESOLUTION",
                 "message": "Resolving condition",
                 "condition": condition.model_dump()
@@ -1127,7 +1182,7 @@ class SearchService:
                 try:
                     dt_val = DT.datetime.fromisoformat(path_val.replace("Z", "+00:00"))  # Convert ISO string to datetime object
                 except ValueError as ve:
-                    log.error(f"Invalid datetime format for temporal condition: {path_val}")
+                    L.error(f"Invalid datetime format for temporal condition: {path_val}")
                     return Err(EX.JubError(f"Invalid datetime format for temporal condition: {path_val}"))
 
 
@@ -1137,7 +1192,7 @@ class SearchService:
                     {"value_type": "DATETIME", "temporal_value": {mongo_op: dt_val}}
                 )
                 docs = await cursor.to_list(length=None)
-                log.debug({
+                L.debug({
                     "event": "TEMPORAL_CONDITION_RESOLUTION",
                     "message": "Resolved temporal condition",
                     "path_val": path_val,
@@ -1157,7 +1212,7 @@ class SearchService:
 
 
             # Handle EXACT
-            log.debug({
+            L.debug({
                 "event": "CONDITION_RESOLUTION",
                 "message": "Handling exact condition",
                 "operator": condition.operator,
@@ -1198,14 +1253,14 @@ class SearchService:
             canonical_res = await self._get_canonical_id(raw_target)
             
             if canonical_res.is_err:
-                log.error(f"Failed to resolve canonical ID for {raw_target}: {canonical_res.unwrap_err()}")
+                L.error(f"Failed to resolve canonical ID for {raw_target}: {canonical_res.unwrap_err()}")
                 return Err(EX.JubError(f"Failed to resolve canonical ID for {raw_target}: {canonical_res.unwrap_err()}"))
             target_id = canonical_res.unwrap()
 
             if condition.operator == ConditionOperators.WILDCARD.value:
                 children_res = await self.catalog_item_relationship_repository.get_all_children_nodes(target_id)
                 if children_res.is_err:
-                    log.error(f"Failed to fetch children for wildcard condition {condition}: {children_res.unwrap_err()}")
+                    L.error(f"Failed to fetch children for wildcard condition {condition}: {children_res.unwrap_err()}")
                     return Err(EX.JubError(f"Failed to fetch children for wildcard condition {condition}: {children_res.unwrap_err()}"))
                 valid_ids = [target_id] + children_res.unwrap()  # Include the parent ID itself
                 return Ok(valid_ids)
@@ -1214,12 +1269,12 @@ class SearchService:
                 return Ok([target_id])
             
             else:
-                log.error(f"Unsupported operator in condition: {condition.operator}")
+                L.error(f"Unsupported operator in condition: {condition.operator}")
                 return Err(EX.UnknownError(f"Unsupported operator in condition: {condition.operator}"))
            
 
         except Exception as e:
-            log.error(f"Error resolving condition {condition}: {e}")
+            L.error(f"Error resolving condition {condition}: {e}")
             return Err(EX.JubError.from_exception(e))
 
     def _build_mongo_pipeline(self,
@@ -1306,3 +1361,148 @@ class SearchService:
         return pipeline
 
 
+
+class UsersProfileXService:
+    def __init__(self, 
+        user_profile_repository: R.UserProfileXRepository,
+        auth_service: AuthenticationService
+    ):
+        self.user_profile_repository = user_profile_repository
+        self.auth_service = auth_service
+    async def update_user_preferences(self, user_id: str, new_settings: DTO.UserPreferencesDTO) -> Result[M.UserProfileX, EX.JubError]:
+        try:
+            
+            preference_model = new_settings.to_model()
+            update_result = await self.user_profile_repository.update_settings(user_id, preference_model)
+            if update_result.is_err:
+                L.error(f"Failed to update user profile for {user_id}: {update_result.unwrap_err()}")
+                return Err(EX.JubError(f"Failed to update user profile: {update_result.unwrap_err()}"))
+            return Ok(update_result.unwrap())
+        except Exception as e:
+            L.error(f"Error updating user profile for {user_id}: {e}")
+            return Err(EX.JubError.from_exception(e))
+        
+
+    async def login(self,dto:XoloDTO.AuthAttemptDTO)->Result[DTO.AutenticationResponsetDTO,EX.JubError]:
+        try:
+            res = await self.auth_service.login(
+                dto = dto
+            )
+            if res.is_err:
+                L.error(f"Login failed for {dto.username}: {res.unwrap_err()}")
+                return Err(EX.AuthorizationError(f"Login failed: {res.unwrap_err()}"))
+            L.info({
+                "event": "USER_LOGIN",
+                "message": f"User {dto.username} logged in successfully."
+            })
+            result = res.unwrap()
+            profile_result = await self.get_user_profile_by_username(dto.username)
+            if profile_result.is_err:
+                L.error(f"Failed to fetch user profile for {dto.username} after successful login: {profile_result.unwrap_err()}")
+                return Err(EX.JubError(f"Login succeeded but failed to fetch user profile: {profile_result.unwrap_err()}"))
+            profile = profile_result.unwrap()
+            # result.emai
+            return Ok(DTO.AutenticationResponsetDTO(
+                access_token        = result.access_token,
+                temporal_secret_key = result.temporal_secret,
+                user_profile        = DTO.UserProfileDTO.from_model(profile),
+            ))
+        except Exception as e:
+            L.error(f"Error during user login: {e}")
+            return Err(EX.JubError.from_exception(e))
+        
+    async def signup(self,dto:XoloDTO.SignUpDTO)->Result[DTO.UserProfileDTO,EX.JubError]:
+        try:
+            default_settings = M.UserPreferences.default()
+            res = await self.auth_service.signup(
+                email         = dto.email,
+                username      = dto.username,
+                password      = dto.password,
+                first_name    = dto.first_name,
+                last_name     = dto.last_name,
+                expiration    = dto.expiration,
+                profile_photo = dto.profile_photo,
+                scope         = dto.scope
+            )
+            if res.is_err:
+                L.error(f"Signup failed for {dto.email}: {res.unwrap_err()}")
+                return Err(EX.JubError(f"Signup failed: {res.unwrap_err()}"))
+            result = res.unwrap()
+            user_id = result.key
+            default_profile  = M.UserProfileX(
+                email      = dto.email,
+                username   = dto.username,
+                first_name = dto.first_name,
+                last_name  = dto.last_name,
+                fullname   = f"{dto.first_name} {dto.last_name}",
+                settings   = default_settings,
+                user_id    = user_id
+            )
+            result = await self.user_profile_repository.insert(default_profile)
+            if result.is_err:
+                L.error(f"Failed to create default profile for {dto.email}: {result.unwrap_err()}")
+                return Err(EX.JubError(f"Failed to create default profile: {result.unwrap_err()}"))
+            return Ok(default_profile)
+        except Exception as e:
+            L.error(f"Error during user signup: {e}")
+            return Err(EX.JubError.from_exception(e))
+    
+
+    async def update_user_profile(self, user_id: str, new_settings: M.UserPreferences) -> Result[M.UserProfileX, EX.JubError]:
+        try: 
+            update_result = await self.user_profile_repository.update_settings(user_id, new_settings)
+            if update_result.is_err:
+                return Err(EX.JubError(f"Failed to update user profile: {update_result.unwrap_err()}"))
+            
+            # Fetch the updated profile to return
+            return await self.get_user_profile(user_id)
+        except Exception as e:
+            L.error(f"Error updating user profile for {user_id}: {e}")
+            return Err(EX.JubError.from_exception(e))
+    async def create_user_profile(self, user_id: str, username: str) -> Result[M.UserProfileX, EX.JubError]:
+        try:
+            new_profile = M.UserProfileX(user_id=user_id, username=username)
+            create_result = await self.user_profile_repository.create(new_profile)
+            if create_result.is_err:
+                return Err(EX.JubError(f"Failed to create user profile: {create_result.unwrap_err()}"))
+            
+            return Ok(new_profile)
+        except Exception as e:
+            L.error(f"Error creating user profile for {user_id}: {e}")
+            return Err(EX.JubError.from_exception(e))
+        
+    
+    async def get_user_profile(self, user_id: str) -> Result[M.UserProfileX, EX.JubError]:
+        try:
+            user_result = await self.user_profile_repository.get_by_id(user_id)
+            if user_result.is_err:
+                return Err(EX.JubError(f"User with ID {user_id} not found: {user_result.unwrap_err()}"))
+            
+            user = user_result.unwrap()
+            return Ok(M.UserProfileX.from_doc(user.model_dump()))
+        except Exception as e:
+            L.error(f"Error fetching user profile for {user_id}: {e}")
+            return Err(EX.JubError.from_exception(e))
+    async def get_user_profile_by_username(self, username: str) -> Result[M.UserProfileX, EX.JubError]:
+        try:
+            user_result = await self.user_profile_repository.get_by_username(username)
+            if user_result.is_err:
+                return Err(EX.JubError(f"User with username {username} not found: {user_result.unwrap_err()}"))
+            
+            user = user_result.unwrap()
+            return Ok(M.UserProfileX.from_doc(user.model_dump()))
+        except Exception as e:
+            L.error(f"Error fetching user profile for username {username}: {e}")
+            return Err(EX.JubError.from_exception(e))
+        
+    async def get_user_profile_by_username(self, username: str) -> Result[M.UserProfileX, EX.JubError]:
+        try:
+            user_result = await self.user_profile_repository.get_by_username(username)
+            if user_result.is_err:
+                return Err(EX.JubError(f"User with username {username} not found: {user_result.unwrap_err()}"))
+            
+            user = user_result.unwrap()
+            return Ok(M.UserProfileX.from_doc(user.model_dump()))
+        except Exception as e:
+            L.error(f"Error fetching user profile for username {username}: {e}")
+            return Err(EX.JubError.from_exception(e))

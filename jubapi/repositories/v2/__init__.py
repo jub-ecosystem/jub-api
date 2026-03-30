@@ -229,4 +229,33 @@ class CatalogItemRelationshipRepository(BaseRepository[M.CatalogItemRelationship
             return Err(EX.JubError.from_exception(e))
 
 
-
+class UserProfileXRepository(BaseRepository[M.UserProfileX]):
+    def __init__(self, collection: Collection):
+        super().__init__(collection, M.UserProfileX, "user_id")
+    
+    async def update_settings(self, user_id: str, new_settings: M.UserPreferences) -> Result[M.UserProfileX, EX.JubError]:
+        try:
+            update_result = await self.collection.update_one(
+                {"user_id": user_id},
+                {"$set": {"settings": new_settings.model_dump(), "updated_at": DT.datetime.now(DT.timezone.utc)}}
+            )
+            if update_result.modified_count == 0:
+                return Err(EX.NotFound(f"User with ID '{user_id}' not found or settings are the same"))
+            
+            # Fetch the updated document
+            updated_doc = await self.collection.find_one({"user_id": user_id})
+            if not updated_doc:
+                return Err(EX.NotFound(f"User with ID '{user_id}' not found after update"))
+            
+            return Ok(M.UserProfileX.from_doc(updated_doc))
+        except Exception as e:
+            log.error(f"Error updating user preferences for {user_id}: {e}")
+            return Err(EX.JubError.from_exception(e))
+    async def get_by_username(self, username:str)->Result[M.UserProfileX,EX.JubError]:
+        try:
+            doc = await self.collection.find_one({"username": username})
+            if not doc:
+                return Err(EX.NotFound(f"User with username '{username}' not found"))
+            return Ok(M.UserProfileX.from_doc(doc))
+        except Exception as e:
+            return Err(EX.JubError.from_exception(e))

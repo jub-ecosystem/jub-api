@@ -1,9 +1,37 @@
 
-from fastapi import Depends
+from typing import Optional,Annotated
+from fastapi import Depends, Header
+from fastapi.security import OAuth2PasswordBearer
 import jubapi.services.v2 as S
 import jubapi.repositories.v2 as R
 import jubapi.db.constants as DC
 from jubapi.db import get_collection
+from xolo.client.client import XoloClient
+import jubapi.dto.v2 as DTO
+from jubapi.log import Log
+import jubapi.config as Cfg
+import jubapi.errors as EX
+
+L = Log(
+    name = __name__,
+    path = Cfg.JUB_LOG_PATH
+)
+
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+
+def get_xolo_client() -> XoloClient:
+    return XoloClient(
+        api_url=Cfg.JUB_XOLO_API_URL,
+        secret=Cfg.JUB_XOLO_SECRET,
+        # hostname = Cfg.JUB_XOLO_HOSTNAME,
+        # port     = Cfg.JUB_XOLO_PORT,
+        # secret   = Cfg.JUB_XOLO_SECRET,
+        # version  = Cfg.JUB_XOLO_VERSION
+    )
+
+
 
 def get_link_manager()->S.GraphLinkManager:
     graph_link_manager = S.GraphLinkManager(
@@ -68,6 +96,19 @@ def get_product_service(link_manager: S.GraphLinkManager=Depends(get_link_manage
     return service
 
 
+
+
+def get_user_profile_service()->S.UsersProfileXService:
+    collection = get_collection(name=DC.CollectionNames.USER_PROFILES.value)
+    repository = R.UserProfileXRepository(collection= collection)
+    auth_service = S.AuthenticationService()
+    service = S.UsersProfileXService(
+        user_profile_repository = repository,
+        auth_service=auth_service
+    )
+    return service
+
+
 def get_observatories_service(graph_link_manager: S.GraphLinkManager=Depends(get_link_manager))->S.ObservatoriesService:
     collection                             = get_collection(name=DC.CollectionNames.OBSERVATORIES.value)
     repository                             = R.ObservatoriesRepository(collection= collection)
@@ -82,3 +123,63 @@ def get_observatories_service(graph_link_manager: S.GraphLinkManager=Depends(get
         product_repository                  = product_repository,
     )
     return service
+
+
+async def __get_current_user(
+    token: Annotated[str, Depends(oauth2_scheme)], 
+    temporal_secret_key: Annotated[Optional[str], Header(alias="Temporal-Secret-Key")] = None,
+    users_profiles_service: S.UsersProfileXService = Depends(get_user_profile_service),
+    xolo_client: XoloClient = Depends(get_xolo_client)
+):
+
+    try:
+        user_result =  xolo_client.get_current_user(
+            token = token, 
+            temporal_secret = temporal_secret_key
+        )
+        if user_result.is_err:
+            e = user_result.unwrap_err() 
+            L.error({
+                "msg": f"Error getting user from Xolo: {e.detail.msg}",
+                "code": e.code,
+                "raw_error": e.detail.raw_error
+            })
+            raise EX.InvalidCredentialsError().to_http_exception()
+        
+        user_dto            = user_result.unwrap()
+        user_profile_result = await users_profiles_service.get_user_profile_by_username(username = user_dto.username)
+        # print("User profile result:", user_profile_result)
+        if user_profile_result.is_err:
+            e = user_profile_result.unwrap_err()
+            L.error({
+                "msg": f"Error getting user profile: {e.detail}",
+            })
+            raise EX.InvalidCredentialsError().to_http_exception()
+        user_profile    = user_profile_result.unwrap()
+
+        return DTO.UserProfileDTO(
+            username   = user_profile.username,
+            user_id    = user_profile.user_id,
+            email      = user_profile.email,
+            is_disabled= user_profile.disabled,
+            first_name = user_profile.first_name,
+            last_name  = user_profile.last_name,
+            fullname   = user_profile.fullname,
+            settings   = DTO.UserPreferencesDTO.from_model(user_profile.settings),
+            created_at = user_profile.created_at.isoformat(),
+            updated_at = user_profile.updated_at.isoformat(),
+        )
+        # user_profile = 
+
+    except Exception as e:
+        L.error(f"Error in __get_current_user: {str(e)}")
+        raise EX.InvalidCredentialsError().to_http_exception()
+
+async def get_current_user(
+    current_user: Annotated[DTO.UserProfileDTO, Depends(__get_current_user)]
+):
+    if current_user.is_disabled:
+        raise EX.AuthorizationError(
+            detail=f"User {current_user.user_id} is disabled."
+        )
+    return current_user
