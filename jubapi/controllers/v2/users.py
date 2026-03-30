@@ -28,9 +28,7 @@ async def signup(
         if result.is_err:
             e = result.unwrap_err()
             L.error({
-                "msg": f"Error during signup: {e.detail.msg}",
-                "code": e.code,
-                "raw_error": e.detail.raw_error
+                "msg": f"Error during signup: {e.detail}",
             })
             raise EX.JubError(msg="Signup failed", code=e.code).to_http_exception()
         

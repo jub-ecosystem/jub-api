@@ -19,7 +19,7 @@ def test_user_profile_creation():
     assert user_profile.settings.appearance.reduce_animations == False
     assert user_profile.settings.exploration.items_per_page == 24
     assert user_profile.settings.exploration.default_view == ViewModeEnum.GRID
-    assert user_profile.settings.export.default_format == ExportFormatEnum.JSON
+    assert user_profile.settings.export.default_format == ExportFormatEnum.YML
 
 def test_user_profile_custom_settings():
     # Create a user profile with custom settings
