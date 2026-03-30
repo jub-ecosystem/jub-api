@@ -6,7 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient as MongoClient
 import jubapi.repositories.v2 as R
 import jubapi.models.v2 as M
 import jubapi.services.v2 as S
-from jubapi.db import CollectionNames
+from jubapi.db.constants import CollectionNames
 import random
 
 

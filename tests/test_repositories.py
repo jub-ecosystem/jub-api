@@ -3,7 +3,7 @@ from motor.motor_asyncio import AsyncIOMotorClient as MongoClient
 import jubapi.repositories.v2 as R
 import jubapi.services.v2 as S
 import jubapi.models.v2 as M
-from jubapi.db import CollectionNames
+from jubapi.db.constants import CollectionNames
 
 @pytest.fixture(scope="function")
 async def test_db():

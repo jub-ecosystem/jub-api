@@ -6,11 +6,13 @@ def test_user_profile_creation():
     # Create a user profile with default settings
     user_profile = UserProfileX(
         user_id="user123",
-        username="TestUser"
+        username="TestUser",
+        email="x@x.com"
     )
     
     assert user_profile.user_id == "user123"
     assert user_profile.username == "TestUser"
+    assert user_profile.email == "x@x.com"
     
     # Check default settings
     assert user_profile.settings.appearance.theme == ThemeEnum.SYSTEM
@@ -30,11 +32,13 @@ def test_user_profile_custom_settings():
     user_profile = UserProfileX(
         user_id="user456",
         username="CustomUser",
+        email="x@x.com",
         settings=custom_settings
     )
     
     assert user_profile.user_id == "user456"
     assert user_profile.username == "CustomUser"
+    assert user_profile.email == "x@x.com"
     
     # Check custom settings
     assert user_profile.settings.appearance.theme == ThemeEnum.DARK
