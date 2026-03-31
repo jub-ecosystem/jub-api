@@ -30,7 +30,7 @@ async def signup(
             L.error({
                 "msg": f"Error during signup: {e.detail}",
             })
-            raise EX.JubError(msg="Signup failed", code=e.code).to_http_exception()
+            raise e.to_http_exception()
         
         return result.unwrap()
     except Exception as e:
@@ -47,7 +47,7 @@ async def login(dto: XoloDTO.AuthAttemptDTO, service: S.UsersProfileXService = D
                 "msg": f"Error during login: {e.detail}",
                 # "raw_error": e.detail.raw_error
             })
-            raise e
+            raise e.to_http_exception()
             # raise EX.(detail="Login failed", code=e.code).to_http_exception()
         
         return result.unwrap()
