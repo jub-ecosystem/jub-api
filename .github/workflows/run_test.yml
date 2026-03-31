@@ -65,7 +65,8 @@ jobs:
           chmod +x deploy.sh && ./deploy.sh ${{ env.JUB_DEPLOY_ENV_FILE_PATH || '.env.dev' }}
         env:
           JUB_ENV_FILE_PATH: ${{ env.ACT == 'true' && env.JUB_DEPLOY_ENV_FILE_PATH || '.env.dev' }}
-
+      - name: List running containers
+        run: docker ps -a
       - name: Lint with Ruff  
         run: |  
           pip install ruff  
