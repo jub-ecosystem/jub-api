@@ -1,5 +1,5 @@
 import pytest
-
+import pytest_asyncio
 from dotenv import load_dotenv
 import os
 
@@ -12,7 +12,7 @@ if env_exists:
     load_dotenv(JUB_ENV_FILE_PATH, override=True)
 
 
-
+@pytest.fixture()
 async def connect_to_database():
     from jubapi.db import connect_to_mongo
     print("Connecting to the database...")
@@ -20,9 +20,9 @@ async def connect_to_database():
     # await asyncio.sleep(0.1)  # simulate async connection
 
 @pytest.fixture( autouse=True)
-async def before_all():
+async def before_all(connect_to_database):
     from jubapi.db import close_mongo_connection
-    await connect_to_database()
+    # await connect_to_database()
     print("Database connected before tests")
     yield 
     print("Disconnecting from database...")

@@ -56,7 +56,7 @@ async def test_signup():
                 enable_tutorial=False
             ),
             export= DTO.ExportSettingsDTO(
-                format="json",
+                default_format="json",
                 include_metadata=True
             )
 

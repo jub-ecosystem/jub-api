@@ -2,11 +2,13 @@ import pytest
 # import asyncio
 # from jubapi.querylang.v2.parser import QueryAST
 from motor.motor_asyncio import AsyncIOMotorClient as MongoClient
-
+from typing import List
 import jubapi.repositories.v2 as R
 import jubapi.models.v2 as M
 import jubapi.services.v2 as S
 from jubapi.db.constants import CollectionNames
+import jubapi.enums.v2 as ENUMS
+import jubapi.dto.v2 as DTO
 import random
 
 
@@ -16,7 +18,7 @@ async def db():
     client = MongoClient("mongodb://localhost:27027/")
     db = client.jub_test
     yield db
-    # await client.drop_database('jub_test')
+    await client.drop_database('jub_test')
 
 @pytest.fixture(scope="function")
 async def services(db):
@@ -66,6 +68,9 @@ async def services(db):
         "db": db # Passed for direct assertions
     }
 
+
+
+
 @pytest.fixture(autouse=True)
 async def seed_database_2(services):
     """Seeds the database before the tests run with complex hierarchies, catalogs, aliases, and observatories."""
@@ -92,16 +97,18 @@ async def seed_database_2(services):
         
         # Example: assuming you pass the item ID and the string alias name
         catalog_item_alias1 = M.CatalogItemAlias(
-            catalog_item_alias_id= alias_1_name,
-            value= alias_1_name,
-            value_type= item.value_type,
-            description= f"Alias 1 for {item.name}"
+            catalog_item_alias_id = alias_1_name,
+            value                 = alias_1_name,
+            value_type            = item.value_type,
+            catalog_type          = item.catalog_type,
+            description           = f"Alias 1 for {item.name}"
         )
         catalog_item_alias2 = M.CatalogItemAlias(
-            catalog_item_alias_id= alias_2_name,
-            value= alias_2_name,
-            value_type= item.value_type,
-            description= f"Alias 2 for {item.name}"
+            catalog_item_alias_id = alias_2_name,
+            value                 = alias_2_name,
+            value_type            = item.value_type,
+            catalog_type          = item.catalog_type,
+            description           = f"Alias 2 for {item.name}"
         )
        
         await cat_srv.add_alias_to_catalog_item(item.catalog_item_id, catalog_item_alias1)
@@ -112,13 +119,14 @@ async def seed_database_2(services):
     # 0.A SETUP THE ROOT CATALOGS
     # ==========================================
     catalogs_to_create = [
-        M.CatalogX(catalog_id="cat_spatial", value="SPATIAL", catalog_type=M.CatalogType.SPATIAL, name="Spatial Catalog", description="Geographic dimensions"),
-        M.CatalogX(catalog_id="cat_time", value="TEMPORAL", catalog_type=M.CatalogType.TEMPORAL, name="Temporal Catalog", description="Time dimensions"),
-        M.CatalogX(catalog_id="cat_sex", value="SEX", catalog_type=M.CatalogType.INTEREST, name="Sex Catalog", description="Biological sex variables"),
-        M.CatalogX(catalog_id="cat_cie10", value="CIE10", catalog_type=M.CatalogType.INTEREST, name="CIE-10 Catalog", description="Medical diagnoses"),
-        M.CatalogX(catalog_id="cat_plot", value="PLOT_TYPE", catalog_type=M.CatalogType.INTEREST, name="Plot Type Catalog", description="Visualization types")
+        M.CatalogX(catalog_id="cat_spatial", value="SPATIAL", catalog_type=ENUMS.CatalogType.SPATIAL, name="Spatial Catalog", description="Geographic dimensions"),
+        M.CatalogX(catalog_id="cat_time", value="TEMPORAL", catalog_type=ENUMS.CatalogType.TEMPORAL, name="Temporal Catalog", description="Time dimensions"),
+        M.CatalogX(catalog_id="cat_sex", value="SEX", catalog_type=ENUMS.CatalogType.INTEREST, name="Sex Catalog", description="Biological sex variables"),
+        M.CatalogX(catalog_id="cat_cie10", value="CIE10", catalog_type=ENUMS.CatalogType.INTEREST, name="CIE-10 Catalog", description="Medical diagnoses"),
+        M.CatalogX(catalog_id="cat_plot", value="PLOT_TYPE", catalog_type=ENUMS.CatalogType.INTEREST, name="Plot Type Catalog", description="Visualization types"),
+        M.CatalogX(catalog_id="cat_age", value="AGE_CAT", catalog_type=ENUMS.CatalogType.INTEREST, name="Age Metrics", description="Continuous numerical variables")
     ]
-    catalogs_to_link = ["cat_spatial", "cat_time", "cat_sex", "cat_cie10", "cat_plot"]
+    catalogs_to_link = ["cat_spatial", "cat_time", "cat_sex", "cat_cie10", "cat_plot", "cat_age"]
     
     for cat in catalogs_to_create:
         await cat_srv.create_catalog(cat)
@@ -134,6 +142,8 @@ async def seed_database_2(services):
         for priority, cat_id in enumerate(catalogs_to_link):
             await observatory_srv.add_catalog(obs_id, cat_id, priority)
 
+
+
     # ==========================================
     # 1. TEMPORAL CATALOG (2000 to 2026)
     # ==========================================
@@ -146,7 +156,8 @@ async def seed_database_2(services):
                 value           = str(year),
                 code            = year,
                 temporal_value  = f"{year}-01-01T00:00:00Z",
-                value_type      = M.CatalogItemValueType.DATETIME,
+                value_type      = ENUMS.CatalogItemValueType.DATETIME,
+                catalog_type    = ENUMS.CatalogType.TEMPORAL,
                 description     = ""
             )
         )
@@ -155,7 +166,7 @@ async def seed_database_2(services):
     # 2. SPATIAL CATALOG
     # ==========================================
     await create_item_with_aliases("cat_spatial", M.CatalogItemX(
-        catalog_item_id="MX", name="Mexico", value="MX", code=0, value_type=M.CatalogItemValueType.STRING, description=""
+        catalog_item_id="MX", name="Mexico", value="MX", code=0, value_type=ENUMS.CatalogItemValueType.STRING, catalog_type=ENUMS.CatalogType.SPATIAL, description=""
     ))
     
     states_munis = {
@@ -169,14 +180,14 @@ async def seed_database_2(services):
     state_code = 1
     for state_id, munis in states_munis.items():
         await create_item_with_aliases("cat_spatial", M.CatalogItemX(
-            catalog_item_id=state_id, name=state_id, value=state_id, code=state_code, value_type=M.CatalogItemValueType.STRING, description=""
+            catalog_item_id=state_id, name=state_id, value=state_id, code=state_code, value_type=ENUMS.CatalogItemValueType.STRING, catalog_type=ENUMS.CatalogType.SPATIAL, description=""
         ), parent_id="MX")
         
         muni_code = state_code * 100
         for muni_name in munis:
             muni_id = f"{state_id}_{muni_name[:3].upper()}" 
             await create_item_with_aliases("cat_spatial", M.CatalogItemX(
-                catalog_item_id=muni_id, name=muni_name, value=muni_id, code=muni_code, value_type=M.CatalogItemValueType.STRING, description=""
+                catalog_item_id=muni_id, name=muni_name, value=muni_id, code=muni_code, value_type=ENUMS.CatalogItemValueType.STRING, catalog_type=ENUMS.CatalogType.SPATIAL, description=""
             ), parent_id=state_id)
             muni_code += 1
         state_code += 1
@@ -184,25 +195,36 @@ async def seed_database_2(services):
     # ==========================================
     # 3. INTEREST CATALOGS
     # ==========================================
-    await create_item_with_aliases("cat_sex", M.CatalogItemX(catalog_item_id="FEMALE", name="Female", value="FEMALE", code=1, value_type=M.CatalogItemValueType.STRING, description=""))
-    await create_item_with_aliases("cat_sex", M.CatalogItemX(catalog_item_id="MALE", name="Male", value="MALE", code=2, value_type=M.CatalogItemValueType.STRING, description=""))
+    await create_item_with_aliases("cat_sex", M.CatalogItemX(catalog_item_id="FEMALE", name="Female", value="FEMALE", code=1, value_type=ENUMS.CatalogItemValueType.STRING, catalog_type=ENUMS.CatalogType.INTEREST, description=""))
+    await create_item_with_aliases("cat_sex", M.CatalogItemX(catalog_item_id="MALE", name="Male", value="MALE", code=2, value_type=ENUMS.CatalogItemValueType.STRING, catalog_type=ENUMS.CatalogType.INTEREST, description=""))
+    
 
+    for i in range(1,100):
+        await create_item_with_aliases("cat_age", M.CatalogItemX(
+            catalog_item_id = f"AGE_{i}",
+            name            = f"Patient Age {i}",
+            value           = f"AGE_{i}",
+            code            = i,
+            value_type      = ENUMS.CatalogItemValueType.NUMBER,   # <-- Set to NUMBER
+            catalog_type    = ENUMS.CatalogType.INTEREST,
+            description     = "Continuous numerical age metric"
+        ))
     plot_types = ["LINE", "BAR", "PIE", "SCATTER", "HEATMAP"]
     for idx, p in enumerate(plot_types):
         await create_item_with_aliases("cat_plot", M.CatalogItemX(
-            catalog_item_id=p, name=f"{p} Chart", value=p, code=idx, value_type=M.CatalogItemValueType.STRING, description=""
+            catalog_item_id=p, name=f"{p} Chart", value=p, code=idx, value_type=ENUMS.CatalogItemValueType.STRING, catalog_type=ENUMS.CatalogType.INTEREST, description=""
         ))
 
     cie10_chapters = {"II": "Neoplasias (C00-D48)", "IV": "Enfermedades endocrinas", "IX": "Enfermedades del aparato circulatorio"}
     for cap_id, desc in cie10_chapters.items():
         await create_item_with_aliases("cat_cie10", M.CatalogItemX(
-            catalog_item_id=cap_id, name=desc, value=cap_id, code=0, value_type=M.CatalogItemValueType.STRING, description=""
+            catalog_item_id=cap_id, name=desc, value=cap_id, code=0, value_type=ENUMS.CatalogItemValueType.STRING, catalog_type=ENUMS.CatalogType.INTEREST, description=""
         ))
 
     cie10_categories = {"C50": ("Tumor maligno de la mama", "II"), "C34": ("Tumor maligno bronquios/pulmón", "II"), "E11": ("Diabetes tipo 2", "IV"), "I10": ("Hipertensión", "IX")}
     for cat_id, (desc, parent_cap) in cie10_categories.items():
         await create_item_with_aliases("cat_cie10", M.CatalogItemX(
-            catalog_item_id=cat_id, name=f"{cat_id} - {desc}", value=cat_id, code=0, value_type=M.CatalogItemValueType.STRING, description=""
+            catalog_item_id=cat_id, name=f"{cat_id} - {desc}", value=cat_id, code=0, value_type=ENUMS.CatalogItemValueType.STRING, catalog_type=ENUMS.CatalogType.INTEREST, description=""
         ), parent_id=parent_cap)
 
     cie10_subcategories = {
@@ -216,7 +238,7 @@ async def seed_database_2(services):
         for sub_val, desc in subcodes:
             unique_db_id = f"{parent_cat}_{sub_val}" 
             await create_item_with_aliases("cat_cie10", M.CatalogItemX(
-                catalog_item_id=unique_db_id, name=f"{parent_cat}.{sub_val} - {desc}", value=sub_val, code=0, value_type=M.CatalogItemValueType.STRING, description=""
+                catalog_item_id=unique_db_id, name=f"{parent_cat}.{sub_val} - {desc}", value=sub_val, code=0, value_type=ENUMS.CatalogItemValueType.STRING, catalog_type=ENUMS.CatalogType.INTEREST, description=""
             ), parent_id=parent_cat)
 
     # ==========================================
@@ -227,6 +249,7 @@ async def seed_database_2(services):
     sex_pool     = ["FEMALE", "MALE"]
     cie10_pool   = ["C50_1", "C50_2", "C50_3", "C34_1", "C34_2", "E11_1", "E11_2", "I10_1", "I10_2", "I10_3"]
     plot_pool    = ["LINE", "BAR", "PIE", "SCATTER", "HEATMAP"]
+    age_pool     = [f"AGE_{i}" for i in range(1,100)]  # Since AGE is continuous, we can just use the same item but differentiate in the product name/description if needed
 
     # Set seed so the random counts are identical every time Pytest runs
     random.seed(42) 
@@ -249,234 +272,46 @@ async def seed_database_2(services):
             sx_tag = sex_pool[product_counter % len(sex_pool)]
             ci_tag = cie10_pool[product_counter % len(cie10_pool)]
             pl_tag = plot_pool[product_counter % len(plot_pool)]
-            
+            ag_tag = age_pool[product_counter % len(age_pool)]
             tags = [sp_tag, sx_tag, tm_tag, ci_tag, pl_tag]
-            prod_name = f"Data {p_id} - {sp_tag} {ci_tag} {tm_tag}"
+            if ag_tag:
+                tags.append(ag_tag)
+            prod_name = f"Data {p_id} - {sp_tag} {ci_tag} {tm_tag} _ {pl_tag} {ag_tag}"
             
             res = await prod_srv.insert_product(
-                M.ProductX(product_id=p_id, name=prod_name, description="Autogenerated test product"), 
+                M.ProductX(
+                    product_id  = p_id,
+                    name        = prod_name,
+                    description = "Autogenerated test product"
+                ), 
                 obs_id, 
                 tags
             )
             assert res.is_ok, f"Failed to insert product {p_id}: {res.error}"
 
-# @pytest.fixture(autouse=True)
-# async def seed_database_2(services):
-#     """Seeds the database before the tests run with complex hierarchies and multiple observatories."""
-#     cat_srv:S.CatalogService = services["catalog"]
-#     prod_srv:S.ProductService = services["product"]
-#     observatory_srv:S.ObservatoriesService = services["observatory"]
-    
-
-#     existing_prod = await prod_srv.get_product_by_id("p_01")
-#     if existing_prod.is_ok:
-#         return
-    
 
 
-#     # ==========================================
-#     # 0. SETUP OBSERVATORIES & ASSIGN CATALOGS
-#     # ==========================================
-#     # We create 10 observatories and link the 5 catalogs to all of them
-#     # catalogs_to_link = ["cat_spatial", "cat_time", "cat_sex", "cat_cie10", "cat_plot"]
-#     # ==========================================
-#     # 0.A SETUP THE ROOT CATALOGS
-#     # ==========================================
-#     catalogs_to_create = [
-#         M.CatalogX(catalog_id="cat_spatial",value="SPATIAL",catalog_type=M.CatalogType.SPATIAL, name="Spatial Catalog", description="Geographic dimensions"),
-#         M.CatalogX(catalog_id="cat_time",value="TEMPORAL",catalog_type=M.CatalogType.TEMPORAL, name="Temporal Catalog", description="Time dimensions"),
-#         M.CatalogX(catalog_id="cat_sex",value="SEX",catalog_type= M.CatalogType.INTEREST, name="Sex Catalog", description="Biological sex variables"),
-#         M.CatalogX(catalog_id="cat_cie10",value="CIE10",catalog_type=M.CatalogType.INTEREST, name="CIE-10 Catalog", description="Medical diagnoses"),
-#         M.CatalogX(catalog_id="cat_plot",value="PLOT_TYPE",catalog_type=M.CatalogType.INTEREST, name="Plot Type Catalog", description="Visualization types")
-#     ]
-#     catalogs_to_link = ["cat_spatial", "cat_time", "cat_sex", "cat_cie10", "cat_plot"]
-#     for cat in catalogs_to_create:
-#         # Assumes your service has a create method for the root CatalogX entity
-#         await cat_srv.create_catalog(cat)
-    
-#     for i in range(1, 11):
-#         obs_id = f"obs_{i}"
-#         # 1. Explicitly create the Observatory entity
-#         await observatory_srv.create_observatory(
-#             M.ObservatoryX(observatory_id=obs_id, title=f"Observatory {i}", description=f"Test Obs {i}")
-#         )
-#         for priority, cat_id in enumerate(catalogs_to_link):
-#             await observatory_srv.add_catalog(obs_id, cat_id, priority)
 
-#     # ==========================================
-#     # 1. TEMPORAL CATALOG (2000 to 2026)
-#     # ==========================================
-#     for year in range(2000, 2027):
-#         await cat_srv.add_item_to_catalog(
-#             "cat_time", 
-#             M.CatalogItemX(
-#                 catalog_item_id = f"Y{year}",
-#                 name            = str(year),
-#                 value           = str(year),
-#                 code            = year,
-#                 temporal_value  = f"{year}-01-01T00:00:00Z",
-#                 value_type      = M.CatalogItemValueType.DATETIME,
-#                 description     = ""
-#             )
-#         )
-
-#     # ==========================================
-#     # 2. SPATIAL CATALOG (MX -> 10 States -> 2 Munis)
-#     # ==========================================
-#     # Root Node
-#     await cat_srv.add_item_to_catalog("cat_spatial", M.CatalogItemX(
-#         catalog_item_id="MX", name="Mexico", value="MX", code=0, value_type="STRING", description=""
-#     ))
-    
-#     states_munis = {
-#         "TAM": ["Victoria", "Tampico"],
-#         "NL": ["Monterrey", "San Pedro"],
-#         "CDMX": ["Coyoacan", "Tlalpan"],
-#         "JAL": ["Guadalajara", "Zapopan"],
-#         "VER": ["Veracruz", "Xalapa"],
-#         "YUC": ["Merida", "Valladolid"],
-#         "PUE": ["Puebla", "Cholula"],
-#         "GTO": ["Leon", "Irapuato"],
-#         "CHIH": ["Chihuahua", "Juarez"],
-#         "OAX": ["Oaxaca", "Huatulco"]
-#     }
-    
-#     state_code = 1
-#     for state_id, munis in states_munis.items():
-#         # Insert State
-#         await cat_srv.add_item_to_catalog("cat_spatial", M.CatalogItemX(
-#             catalog_item_id=state_id, name=state_id, value=state_id, code=state_code, value_type=M.CatalogItemValueType.STRING, description=""
-#         ), parent_id="MX")
-        
-#         # Insert Municipalities (using first 3 letters as ID for simplicity)
-#         muni_code = state_code * 100
-#         for muni_name in munis:
-#             muni_id = f"{state_id}_{muni_name[:3].upper()}" 
-#             await cat_srv.add_item_to_catalog("cat_spatial", M.CatalogItemX(
-#                 catalog_item_id=muni_id, name=muni_name, value=muni_id, code=muni_code, value_type=M.CatalogItemValueType.STRING, description=""
-#             ), parent_id=state_id)
-#             muni_code += 1
-#         state_code += 1
-
-#     # ==========================================
-#     # 3. INTEREST CATALOGS (Sex, CIE10, Plot)
-#     # ==========================================
-#     # SEX
-#     await cat_srv.add_item_to_catalog("cat_sex", M.CatalogItemX(catalog_item_id="FEMALE", name="Female", value="FEMALE", code=1, value_type=M.CatalogItemValueType.STRING, description=""))
-#     await cat_srv.add_item_to_catalog("cat_sex", M.CatalogItemX(catalog_item_id="MALE", name="Male", value="MALE", code=2, value_type=M.CatalogItemValueType.STRING, description=""))
-
-#     # PLOT TYPE
-#     plot_types = ["LINE", "BAR", "PIE", "SCATTER", "HEATMAP"]
-#     for idx, p in enumerate(plot_types):
-#         await cat_srv.add_item_to_catalog("cat_plot", M.CatalogItemX(
-#             catalog_item_id=p, name=f"{p} Chart", value=p, code=idx, value_type=M.CatalogItemValueType.STRING, description=""
-#         ))
-
-# # ==========================================
-#     # 3. INTEREST CATALOG (Perfect Hierarchy)
-#     # ==========================================
-    
-#     # Level 1: Chapters (Roots)
-#     cie10_chapters = {
-#         "II": "Neoplasias (C00-D48)",
-#         "IV": "Enfermedades endocrinas, nutricionales y metabólicas (E00-E90)",
-#         "IX": "Enfermedades del aparato circulatorio (I00-I99)"
-#     }
-    
-#     for cap_id, desc in cie10_chapters.items():
-#         await cat_srv.add_item_to_catalog("cat_cie10", M.CatalogItemX(
-#             catalog_item_id=cap_id, 
-#             name=desc, 
-#             value=cap_id, # DSL matches 'II', 'IV', 'IX'
-#             code=0, 
-#             value_type=M.CatalogItemValueType.STRING, 
-#             description=""
-#         ))
-
-#     # Level 2: Categories
-#     cie10_categories = {
-#         "C50": ("Tumor maligno de la mama", "II"),
-#         "C34": ("Tumor maligno de los bronquios y del pulmón", "II"),
-#         "E11": ("Diabetes mellitus tipo 2", "IV"),
-#         "I10": ("Hipertensión esencial", "IX")
-#     }
-
-#     for cat_id, (desc, parent_cap) in cie10_categories.items():
-#         await cat_srv.add_item_to_catalog("cat_cie10", M.CatalogItemX(
-#             catalog_item_id=cat_id, 
-#             name=f"{cat_id} - {desc}", 
-#             value=cat_id, # DSL matches 'C50', 'E11', etc.
-#             code=0, 
-#             value_type=M.CatalogItemValueType.STRING, 
-#             description=""
-#         ), parent_id=parent_cap)
-
-#     # Level 3: Subcategories (The leaf nodes)
-#     # Split the medical codes (e.g., E11.2 -> parent "E11", child "2")
-#     cie10_subcategories = {
-#         "C50": [("1", "Porción no especificada"), ("2", "Cuadrante superior interno"), ("3", "Cuadrante inferior interno")],
-#         "C34": [("1", "Lóbulo superior"), ("2", "Lóbulo medio")],
-#         "E11": [("1", "Con cetoacidosis"), ("2", "Con complicaciones renales"), ("3", "Con complicaciones oftálmicas")],
-#         "I10": [("1", "Benigna"), ("2", "Maligna"), ("3", "No especificada")]
-#     }
-
-#     for parent_cat, subcodes in cie10_subcategories.items():
-#         for sub_val, desc in subcodes:
-#             # Create a unique ID for the DB (e.g., "E11_2")
-#             unique_db_id = f"{parent_cat}_{sub_val}" 
-            
-#             await cat_srv.add_item_to_catalog("cat_cie10", M.CatalogItemX(
-#                 catalog_item_id=unique_db_id, 
-#                 name=f"{parent_cat}.{sub_val} - {desc}", 
-#                 value=sub_val, # DSL matches '1', '2', '3'
-#                 code=0, 
-#                 value_type=M.CatalogItemValueType.STRING, 
-#                 description=""
-#             ), parent_id=parent_cat)
-
-#     # ==========================================
-#     # 4. SEED PRODUCTS (100 Total: 10 per Observatory)
-#     # ==========================================
-    
-#     # Define the pools of valid item IDs we just seeded
-#     spatial_pool = ["MX", "TAM", "TAM_VIC", "NL_MON", "CDMX_COY", "JAL", "YUC", "PUE", "GTO", "CHIH"]
-#     time_pool    = [f"Y{year}" for year in range(2000, 2027)]
-#     sex_pool     = ["FEMALE", "MALE"]
-#     cie10_pool   = ["C50_1", "C50_2", "C50_3", "C34_1", "C34_2", "E11_1", "E11_2", "I10_1", "I10_2", "I10_3"]
-#     plot_pool    = ["LINE", "BAR", "PIE", "SCATTER", "HEATMAP"]
-
-#     product_counter = 0
-
-#     for obs_idx in range(1, 11):
-#         obs_id = f"obs_{obs_idx}"
-        
-#         for prod_idx in range(1, 11):
-#             product_counter += 1
-#             p_id = f"p_{obs_idx:02d}_{prod_idx:02d}" # e.g., p_01_01, p_01_02... p_10_10
-            
-#             # Use modulo to deterministically cycle through the pools so we get a good mix of data
-#             sp_tag = spatial_pool[product_counter % len(spatial_pool)]
-#             tm_tag = time_pool[product_counter % len(time_pool)]
-#             sx_tag = sex_pool[product_counter % len(sex_pool)]
-#             ci_tag = cie10_pool[product_counter % len(cie10_pool)]
-#             pl_tag = plot_pool[product_counter % len(plot_pool)]
-            
-#             tags = [sp_tag, sx_tag, tm_tag, ci_tag, pl_tag]
-            
-#             # Create a descriptive name so it's easy to read during test debugging
-#             prod_name = f"Data {p_id} - {sp_tag} {ci_tag} {tm_tag}"
-            
-#             res = await prod_srv.insert_product(
-#                 M.ProductX(product_id=p_id, name=prod_name, description="Autogenerated test product"), 
-#                 obs_id, 
-#                 tags
-#             )
-#             assert res.is_ok, f"Failed to insert product {p_id}: {res.error}"
+@pytest.mark.asyncio
+async def test_search_age_range(services):
+    search_service:S.SearchService = services["search"]
+    query  = "jub.v1.VI(AGE = 20)"
+    result = await search_service.search(query=query)
+    assert result.is_ok
+    products = result.unwrap()
+    assert len(products)== 1, "Expected at least one product for AGE = 20"
+    query2 = "jub.v1.VI(AGE >= 20 AND AGE <= 30)"
+    result2 = await search_service.search(query=query2,limit=100)
+    assert result2.is_ok
+    products2:List[DTO.ProductXDTO] = result2.unwrap()
+    # xs = list(map(lambda p: p.name, products2))
+    print("Products for AGE between 20 and 30:", products2)
+    assert len(products2) >= 11, "Expected at least 11 products for AGE between 20 and 30 (inclusive)"
 
 @pytest.mark.asyncio
 async def test_search_observatories(services):
     search_service:S.SearchService = services["search"]
-    query  = "jub.v1.VS(MX.TAM).VT(>=2000 AND <=2026).VI(SEX.MALE AND CIE10.E11.2 AND PLOT_TYPE.BAR)"
+    query  = "jub.v1.VS(MX.TAM).VT(>=2015).VI(SEX.MALE AND CIE10.E11.2 AND PLOT_TYPE.BAR)"
     result = await search_service.search_observatories(query=query)
     assert result.is_ok
 
