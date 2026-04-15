@@ -1,6 +1,7 @@
 import pytest
 from jubapi.querylang.v2.parser import QueryAST
 from jubapi.querylang.v2.translator import ASTToMongoTranslator
+from jubapi.utils import Utils
 
 # ==========================================
 # 1. SPATIAL VARIABLE (VS) TESTS
@@ -30,7 +31,7 @@ def test_translate_temporal_exact():
     mongo_query = ASTToMongoTranslator.translate(ast)
     
     # Assuming your parser standardized "2025" to "2025-01-01T00:00:00Z"
-    assert mongo_query == {"temporal_id": "2025-01-01T00:00:00Z"}
+    assert mongo_query == {"temporal_id": Utils.from_string_to_datetime("2025-01-01T00:00:00Z")}
 
 def test_translate_temporal_range():
     """Test translating a date range with greater than and less than."""
@@ -39,8 +40,8 @@ def test_translate_temporal_range():
     
     assert "temporal_id" in mongo_query
     assert mongo_query["temporal_id"] == {
-        "$gte": "2000-01-01T00:00:00Z",
-        "$lte": "2025-01-01T00:00:00Z"
+        "$gte": Utils.from_string_to_datetime("2000-01-01T00:00:00Z"),
+        "$lte": Utils.from_string_to_datetime("2025-01-01T00:00:00Z")
     }
 
 
@@ -87,8 +88,8 @@ def test_translate_complex_combined_query():
     expected_query = {
         "spatial_id": "MX",
         "temporal_id": {
-            "$gte": "2020-01-01T00:00:00Z",
-            "$lte": "2026-01-01T00:00:00Z"
+            "$gte": Utils.from_string_to_datetime("2020-01-01T00:00:00Z"),
+            "$lte": Utils.from_string_to_datetime("2026-01-01T00:00:00Z")
         },
         "interest_ids": {
             "$all": ["SEX_MALE", "CIE10_C50"]

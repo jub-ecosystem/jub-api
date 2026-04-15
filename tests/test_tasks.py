@@ -1,52 +1,22 @@
-import os
 import pytest
-from fastapi import Depends
 from httpx import AsyncClient, ASGITransport
 from jubapi.server import app
 import jubapi.middlewares as MX
 import jubapi.dto.v2 as DTO
 import jubapi.enums.v2 as ENUMS
-MOCK_USER = DTO.UserProfileDTO(
-    user_id  = "test_task_user_123",
-    username = "test_admin",
-    email    = "admin@test.com",
-    created_at="",
-    updated_at="",
-    first_name="",
-    fullname="",
-    is_disabled=False,
-    last_name="",
-    settings=DTO.UserPreferencesDTO(
-        appearance  = DTO.AppearanceSettingsDTO(),
-        exploration = DTO.ExplorationSettingsDTO(),
-        export      = DTO.ExportSettingsDTO()
-    )
-)
-
-def override_get_current_user():
-    """Bypasses the actual authentication middleware."""
-    return MOCK_USER
-
-app.dependency_overrides[MX.get_current_user] = override_get_current_user
-
 
 # ==========================================
 # 2. FIXTURES
 # ==========================================
-@pytest.fixture
-async def async_client():
-    """Creates the async test client connected to the FastAPI app."""
-    transport = ASGITransport(app=app)
-    # Notice the base_url points directly to the prefix defined in your router
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        yield client
+
 
 @pytest.fixture(autouse=True)
-async def seed_test_tasks() -> None:
+async def seed_test_tasks(get_current_user) -> None:
     """
     Seeds the database with test tasks before the tests run.
     Uses the TaskService to create initial states.
     """
+    MOCK_USER, _ = get_current_user
     task_srv = MX.get_tasks_service(
         notification_service = MX.get_notification_service(),
         repository           = MX.get_tasks_repository()
@@ -82,9 +52,10 @@ async def seed_test_tasks() -> None:
 # ==========================================
 
 @pytest.mark.asyncio
-async def test_get_my_tasks(async_client: AsyncClient):
+async def test_get_my_tasks(async_client: AsyncClient, get_current_user):
     """Tests fetching the task list for the authenticated user."""
-    response = await async_client.get("api/v2/tasks")
+    MOCK_USER, headers = get_current_user
+    response = await async_client.get("api/v2/tasks", headers=headers)
     
     assert response.status_code == 200
     data = response.json()
@@ -95,18 +66,20 @@ async def test_get_my_tasks(async_client: AsyncClient):
     assert all(task["user_id"] == MOCK_USER.user_id for task in data)
 
 @pytest.mark.asyncio
-async def test_get_my_tasks_with_limit(async_client: AsyncClient):
+async def test_get_my_tasks_with_limit(async_client: AsyncClient, get_current_user):
     """Tests the limit query parameter."""
-    response = await async_client.get("api/v2/tasks?limit=1")
+    MOCK_USER, headers = get_current_user
+    response = await async_client.get("api/v2/tasks?limit=1", headers=headers)
     
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 1
 
 @pytest.mark.asyncio
-async def test_get_tasks_stats(async_client: AsyncClient):
+async def test_get_tasks_stats(async_client: AsyncClient, get_current_user):
     """Tests the /stats endpoint returning the TasksStatsDTO."""
-    response = await async_client.get("api/v2/tasks/stats")
+    MOCK_USER, headers = get_current_user
+    response = await async_client.get("api/v2/tasks/stats", headers=headers)
     
     assert response.status_code == 200
     data =DTO.TasksStatsDTO.model_validate(response.json())
@@ -115,10 +88,11 @@ async def test_get_tasks_stats(async_client: AsyncClient):
     assert data.pending >0 and data.failed>0
 
 @pytest.mark.asyncio
-async def test_retry_failed_task(async_client: AsyncClient):
+async def test_retry_failed_task(async_client: AsyncClient, get_current_user):
     """Tests retrying a failed task and verifying its status changes."""
+    MOCK_USER, headers = get_current_user
     # 1. Fetch current tasks to find a failed one
-    list_res = await async_client.get("api/v2/tasks")
+    list_res = await async_client.get("api/v2/tasks", headers=headers)
     tasks = list_res.json()
     failed_tasks = [t for t in tasks if t["current_status"] == ENUMS.TaskStatusEnum.FAILED.value]
     
@@ -126,11 +100,11 @@ async def test_retry_failed_task(async_client: AsyncClient):
     target_task_id = failed_tasks[0]["task_id"]
     
     # 2. Trigger the retry endpoint
-    retry_res = await async_client.put(f"api/v2/tasks/{target_task_id}/retry")
+    retry_res = await async_client.put(f"api/v2/tasks/{target_task_id}/retry", headers=headers)
     assert retry_res.status_code == 204
     
     # 3. Verify the status was reset to PENDING
-    verify_res = await async_client.get(f"api/v2/tasks/{target_task_id}")
+    verify_res = await async_client.get(f"api/v2/tasks/{target_task_id}", headers=headers)
     assert verify_res.status_code == 200
     task_details = DTO.TaskXDTO.model_validate(verify_res.json())
     assert task_details.current_status == ENUMS.TaskStatusEnum.PENDING.value

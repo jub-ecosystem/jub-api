@@ -1,14 +1,18 @@
+
+from cmath import log
+import os
 from jubapi.repositories.v2.base import BaseRepository
 from motor.motor_asyncio import AsyncIOMotorCollection as Collection
 import datetime as DT
 import jubapi.models.v2 as M
-from typing import List
+from typing import List,Dict
 from option import Result,Err,Ok
 import jubapi.errors as EX
 from jubapi.log.log import Log
-import os
+import jubapi.enums.v2 as ENUMS
+import jubapi.dto.v2 as DTO
 
-log = Log(
+L = Log(
     name = __name__,
     path = os.environ.get("JUB_LOG_PATH", "/log")
 )
@@ -68,7 +72,7 @@ class CatalogItemsRepository(BaseRepository[M.CatalogItemX]):
                 return [M.CatalogItemX.from_doc(doc) for doc in docs]
                 
             except Exception as e:
-                log.error(f"Error querying catalog items by value '{search_value}': {e}")
+                L.error(f"Error querying catalog items by value '{search_value}': {e}")
                 return []
 
     async def find_by_temporal_operator(self, mongo_op: str, target_date: str) -> List[M.CatalogItemX]:
@@ -95,7 +99,7 @@ class CatalogItemsRepository(BaseRepository[M.CatalogItemX]):
                 
             except Exception as e:
                 # Depending on how your repo handles errors, you might want to log this or raise a custom error.
-                log.error(f"Error querying temporal operator {mongo_op} with date {target_date}: {e}")
+                L.error(f"Error querying temporal operator {mongo_op} with date {target_date}: {e}")
                 return []
 
 class CatalogItemAliasesRepository(BaseRepository[M.CatalogItemAlias]):
@@ -225,7 +229,7 @@ class CatalogItemRelationshipRepository(BaseRepository[M.CatalogItemRelationship
                     
             return Ok(list(descendant_ids))
         except Exception as e:
-            log.error(f"Error in get_all_children_nodes: {e}")
+            L.error(f"Error in get_all_children_nodes: {e}")
             return Err(EX.JubError.from_exception(e))
 
 
@@ -249,7 +253,7 @@ class UserProfileXRepository(BaseRepository[M.UserProfileX]):
             
             return Ok(M.UserProfileX.from_doc(updated_doc))
         except Exception as e:
-            log.error(f"Error updating user preferences for {user_id}: {e}")
+            L.error(f"Error updating user preferences for {user_id}: {e}")
             return Err(EX.JubError.from_exception(e))
     async def get_by_username(self, username:str)->Result[M.UserProfileX,EX.JubError]:
         try:
@@ -259,3 +263,299 @@ class UserProfileXRepository(BaseRepository[M.UserProfileX]):
             return Ok(M.UserProfileX.from_doc(doc))
         except Exception as e:
             return Err(EX.JubError.from_exception(e))
+        
+
+
+class NotificationsRepository(BaseRepository[M.Notification]):
+    def __init__(self, collection):
+        """
+        Initializes the repository with the specific Notification model and ID field.
+        """
+        super().__init__(collection, M.Notification, "notification_id")
+
+    async def check_ownership(self, notification_id: str, user_id: str) -> Result[bool, EX.JubError]:
+        """
+        Checks if a notification belongs to the user (for authorization).
+        """
+        try:
+            doc = await self.collection.find_one({"notification_id": notification_id})
+            if not doc:
+                return Err(EX.NotFound(f"Notification with ID '{notification_id}' not found"))
+            if '_id' in doc:
+                del doc['_id']  # Remove MongoDB's internal ID if present
+
+            model = M.Notification.model_validate(doc)
+
+            is_owner = model.user_id == user_id
+            return Ok(is_owner)
+        except Exception as e:
+            L.error(f"Error checking ownership for notification {notification_id} and user {user_id}: {e}")
+            return Err(EX.JubError.from_exception(e))
+    async def get_by_id_and_user(self, notification_id: str, user_id: str) -> Result[M.Notification, EX.JubError]:
+        """
+        Fetches a notification by its ID and checks if it belongs to the user.
+        This can be used for authorization before allowing updates or deletions.
+        """
+        try:
+            doc = await self.collection.find_one({"notification_id": notification_id, "user_id": user_id})
+            if not doc:
+                return Err(EX.NotFound(f"Notification with ID '{notification_id}' not found for user '{user_id}'"))
+            if '_id' in doc:
+                del doc['_id']  # Remove MongoDB's internal ID if present
+
+            model = M.Notification.model_validate(doc)
+            return Ok(model)
+        except Exception as e:
+            L.error(f"Error fetching notification {notification_id} for user {user_id}: {e}")
+            return Err(EX.JubError.from_exception(e))
+    async def get_unread_by_user(self, user_id: str, limit: int = 50) -> Result[List[M.Notification], EX.JubError]:
+        """
+        Fetches all unread notifications for a specific user, sorted by newest first.
+        """
+        try:
+            # We don't use self.find_many here because we want to sort them by date descending
+            cursor = self.collection.find(
+                {"user_id": user_id, "is_read": False}
+            ).sort("created_at", -1).limit(limit)
+            
+            notifications = []
+            for doc in await cursor.to_list(length=limit):
+                if '_id' in doc:
+                    del doc['_id']  # Remove MongoDB's internal ID if present
+                notifications.append(self.model_class.model_validate(doc))
+            # [self.model_class.model_validate(doc) async for doc in cursor]
+            return Ok(notifications)
+        except Exception as e:
+            L.error(f"Error fetching unread notifications for user {user_id}: {e}")
+            return Err(EX.UnknownError(str(e)))
+
+    async def get_all_by_user(self, user_id: str, limit: int = 50) -> Result[List[M.Notification], EX.JubError]:
+        """
+        Fetches all notifications (read and unread) for a specific user, sorted by newest first.
+        """
+        try:
+            sort_criteria = [
+                ("is_read", 1),  # Unread first
+                ("created_at", -1)  # Newest first
+            ]
+            cursor = self.collection.find(
+                {"user_id": user_id}
+            ).sort(sort_criteria).limit(limit)
+            
+            notifications = []
+            for doc in await cursor.to_list(length=limit):
+                if '_id' in doc:
+                    del doc['_id']  # Remove MongoDB's internal ID if present
+                notifications.append(self.model_class.model_validate(doc))
+
+            # notifications = [self.model_class.model_validate(doc) async for doc in cursor]
+            return Ok(notifications)
+        except Exception as e:
+            L.error(f"Error fetching all notifications for user {user_id}: {e}")
+            return Err(EX.UnknownError(str(e)))
+
+    async def mark_as_read(self, notification_id: str) -> Result[M.Notification, EX.JubError]:
+        """
+        Marks a single notification as read using the base class update method.
+        """
+        return await self.update(notification_id, {"is_read": True})
+
+    async def mark_all_as_read(self, user_id: str) -> Result[int, EX.JubError]:
+        """
+        Marks all unread notifications for a user as read.
+        Returns the number of notifications modified.
+        """
+        try:
+            result = await self.collection.update_many(
+                {"user_id": user_id, "is_read": False},
+                {"$set": {"is_read": True}}
+            )
+            return Ok(result.modified_count)
+        except Exception as e:
+            L.error(f"Error marking all notifications as read for user {user_id}: {e}")
+            return Err(EX.UnknownError(str(e)))
+
+    async def delete_read_by_user(self, user_id: str) -> Result[int, EX.JubError]:
+        """
+        Cleans up the database by deleting all notifications that the user has already read.
+        Returns the number of deleted notifications.
+        """
+        try:
+            result = await self.collection.delete_many(
+                {"user_id": user_id, "is_read": True}
+            )
+            return Ok(result.deleted_count)
+        except Exception as e:
+            L.error(f"Error deleting read notifications for user {user_id}: {e}")
+            return Err(EX.UnknownError(str(e)))
+
+
+
+class TaskRepository(BaseRepository[M.TaskX]):
+    def __init__(self, collection:Collection):
+        """
+        Initializes the repository with the TaskX model and its specific ID field.
+        """
+        super().__init__(collection, M.TaskX, "task_id")
+
+    async def get_tasks_by_user(self, user_id: str, limit: int = 50) -> Result[List[M.TaskX], EX.JubError]:
+        """
+        Fetches the recent tasks for a user, sorted by newest first.
+        This feeds the main list in your UI.
+        """
+        try:
+            cursor = self.collection.find({"user_id": user_id}).sort("updated_at", -1).limit(limit)
+            tasks = []
+            for doc in await cursor.to_list(length=limit):
+                if '_id' in doc:
+                    del doc['_id']  # Remove MongoDB's internal ID if present
+                tasks.append(self.model_class.model_validate(doc))
+            return Ok(tasks)
+        except Exception as e:
+            L.error(f"Error fetching tasks for user {user_id}: {e}")
+            return Err(EX.UnknownError(str(e)))
+
+    async def get_task_statistics(self, user_id: str) -> Result[DTO.TasksStatsDTO, EX.JubError]:
+        """
+        Aggregates task counts by their current status.
+        This provides the exact numbers needed for the top UI cards (In Progress, Completed, Failed).
+        """
+        try:
+            pipeline = [
+                {"$match": {"user_id": user_id}},
+                {"$group": {"_id": "$current_status", "count": {"$sum": 1}}}
+            ]
+            
+            cursor = self.collection.aggregate(pipeline)
+            
+            # Initialize with 0 so the frontend always has the keys even if empty
+            stats = {
+                ENUMS.TaskStatusEnum.PENDING.value: 0,
+                ENUMS.TaskStatusEnum.RUNNING.value: 0,
+                ENUMS.TaskStatusEnum.SUCCESS.value: 0,
+                ENUMS.TaskStatusEnum.FAILED.value: 0,
+            }
+            
+            async for doc in cursor:
+                status_key = doc["_id"]
+                if status_key in stats:
+                    stats[status_key] = doc["count"]
+                    
+            return Ok(DTO.TasksStatsDTO.model_validate(stats))
+        except Exception as e:
+            L.error(f"Error aggregating task stats for user {user_id}: {e}")
+            return Err(EX.UnknownError(str(e)))
+
+    async def update_progress(
+        self, 
+        task_id: str, 
+        percentage: int, 
+        message: str, 
+        status: ENUMS.TaskStatusEnum = None
+    ) -> Result[bool, EX.JubError]:
+        """
+        Updates the live progress of a task. 
+        Designed to be called frequently by background workers generating the products.
+        """
+        try:
+            update_data = {
+                "progress_percentage": percentage,
+                "progress_message": message,
+                "updated_at": DT.datetime.now(DT.timezone.utc)
+            }
+            if status:
+                update_data["current_status"] = status
+
+            result = await self.collection.update_one(
+                {"task_id": task_id},
+                {"$set": update_data}
+            )
+            
+            if result.matched_count == 0:
+                return Err(EX.NotFound(f"Task {task_id} not found."))
+                
+            return Ok(True)
+        except Exception as e:
+            L.error(f"Error updating progress for task {task_id}: {e}")
+            return Err(EX.UnknownError(str(e)))
+
+    async def add_retry_attempt(self, task_id: str, new_attempt: M.TaskAttempt) -> Result[bool, EX.JubError]:
+        """
+        Pushes a new attempt into the task history and resets the progress indicators.
+        Called when a user clicks 'Reintentar' on the UI.
+        """
+        try:
+            # We use $push to atomically add the attempt to the array without overwriting history
+            result = await self.collection.update_one(
+                {"task_id": task_id},
+                {
+                    "$push": {"attempts": new_attempt.model_dump(mode="json")},
+                    "$set": {
+                        "current_status": ENUMS.TaskStatusEnum.PENDING,
+                        "progress_percentage": 0,
+                        "progress_message": "En cola para reintento...",
+                        "updated_at": DT.datetime.now(DT.timezone.utc)
+                    }
+                }
+            )
+            
+            if result.matched_count == 0:
+                return Err(EX.NotFound(f"Task {task_id} not found."))
+                
+            return Ok(True)
+        except Exception as e:
+            L.error(f"Error adding retry attempt for task {task_id}: {e}")
+            return Err(EX.UnknownError(str(e)))
+
+class DataSourceRepository(BaseRepository[M.DataSource]):
+    def __init__(self, collection:Collection):
+        super().__init__(collection, M.DataSource, "source_id")
+
+class DataRecordRepository(BaseRepository[M.DataRecord]):
+    def __init__(self, collection:Collection):
+        super().__init__(collection, M.DataRecord, "record_id")
+
+    async def find_by_query(self, source_id: str, query: dict, limit: int = 100) -> Result[List[M.DataRecord], EX.JubError]:
+        """
+        Finds records based on a MongoDB query dict, filtered by source_id.
+        This is the main method used by your Jub DSL engine to fetch data subsets.
+        """
+        try:
+            # Ensure the query is always scoped to the specific data source
+            full_query = {"source_id": source_id, **query}
+            result = await self.find(query=full_query,limit=limit)
+            if result.is_err:
+                return Err(result.unwrap_err())
+            records = result.unwrap()
+            return Ok(records)
+        except Exception as e:
+            L.error(f"Error executing find with query {query} for source {source_id}: {e}")
+            return Err(EX.UnknownError(str(e)))
+    async def insert_many(self, records: List[M.DataRecord]) -> Result[int, EX.JubError]:
+        """
+        Inserts a large batch of records at once. 
+        Crucial for CSV ingestion to avoid database timeouts.
+        """
+        if not records:
+            return Ok(0)
+            
+        try:
+            # Convert all Pydantic models to dictionaries
+            documents = [record.model_dump() for record in records]
+            result = await self.collection.insert_many(documents)
+            return Ok(len(result.inserted_ids))
+        except Exception as e:
+            L.error(f"Error bulk inserting records: {e}")
+            return Err(EX.UnknownError(str(e)))
+
+    async def delete_by_source(self, source_id: str) -> Result[int, EX.JubError]:
+        """
+        Deletes all records associated with a specific data source.
+        Useful if a user deletes a CSV or needs to re-upload it.
+        """
+        try:
+            result = await self.collection.delete_many({"source_id": source_id})
+            return Ok(result.deleted_count)
+        except Exception as e:
+            L.error(f"Error deleting records for source {source_id}: {e}")
+            return Err(EX.UnknownError(str(e)))

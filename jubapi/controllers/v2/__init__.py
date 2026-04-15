@@ -1,5 +1,7 @@
-from jubapi.controllers.v2.observatories import router as observatories_router_v2
-from jubapi.controllers.v2.search import router as search_router_v2
-from jubapi.controllers.v2.catalogs import router as catalogs_router_v2
-from jubapi.controllers.v2.jub import router as jub_router_v2
-from jubapi.controllers.v2.users import router as users_router_v2
+from jubapi.controllers.v2.observatories import router as observatories
+from jubapi.controllers.v2.search import router as search
+from jubapi.controllers.v2.catalogs import router as catalogs
+from jubapi.controllers.v2.jub import router as jub
+from jubapi.controllers.v2.users import router as users
+from jubapi.controllers.v2.notifications import router as notifications
+from jubapi.controllers.v2.tasks import router as tasks

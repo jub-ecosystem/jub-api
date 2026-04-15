@@ -5,20 +5,6 @@ import jubapi.services.v2 as S
 import jubapi.models.v2 as M
 from jubapi.db.constants import CollectionNames
 
-@pytest.fixture(scope="function")
-async def test_db():
-    """
-    Sets up a clean MongoDB test database before tests run,
-    and drops it completely after all tests in this module finish.
-    """
-    client = MongoClient("mongodb://localhost:27027/")
-    db = client.jub_test_database
-    
-    # Yield the db to the tests
-    yield db
-    
-    # Teardown: Clean up after tests are done
-    client.drop_database('jub_test_database')
 
 @pytest.fixture
 def repos(test_db):

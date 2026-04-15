@@ -1,36 +1,28 @@
 import pytest
 from motor.motor_asyncio import AsyncIOMotorClient as MongoClient
-
+import jubapi.enums.v2 as ENUMS
 import jubapi.repositories.v2 as R
 import jubapi.models.v2 as M
 import jubapi.services.v2 as S
 from jubapi.db.constants import CollectionNames
 
 @pytest.fixture(scope="function")
-async def db():
-    """Provides a clean test database."""
-    client = MongoClient("mongodb://localhost:27027/")
-    db = client["jub_test_1"]
-    yield db
-    await client.drop_database('jub_test_1')
-
-@pytest.fixture(scope="function")
-async def services(db):
+async def services(test_db):
     """Initializes all required repositories and services."""
-    observatory_repository        = R.ObservatoriesRepository(db[CollectionNames.OBSERVATORIES.value])
-    product_repository            = R.ProductsRepository(db[CollectionNames.PRODUCTS.value])
-    catalog_repository            = R.CatalogsRepository(db[CollectionNames.CATALOGS.value])
-    catalog_item_repository       = R.CatalogItemsRepository(db[CollectionNames.CATALOG_ITEMS.value])
-    catalog_item_value_repository = R.CatalogItemAliasesRepository(db[CollectionNames.CATALOG_ITEM_VALUES.value])
+    observatory_repository        = R.ObservatoriesRepository(test_db[CollectionNames.OBSERVATORIES.value])
+    product_repository            = R.ProductsRepository(test_db[CollectionNames.PRODUCTS.value])
+    catalog_repository            = R.CatalogsRepository(test_db[CollectionNames.CATALOGS.value])
+    catalog_item_repository       = R.CatalogItemsRepository(test_db[CollectionNames.CATALOG_ITEMS.value])
+    catalog_item_value_repository = R.CatalogItemAliasesRepository(test_db[CollectionNames.CATALOG_ITEM_VALUES.value])
     
     # 2. Link Manager
     link_manager = S.GraphLinkManager(
-        observatory_product_link_repository        = R.ObservatoryToProductLinkRepository(db[CollectionNames.OBSERVATORY_PRODUCT_LINKS.value]),
-        product_catalog_item_link_repository       = R.ProductToCatalogItemLinkRepository(db[CollectionNames.PRODUCT_CATALOGS_ITEM_LINKS.value]),
-        catalog_item_relationship_repository       = R.CatalogItemRelationshipRepository(db[CollectionNames.CATALOG_ITEM_RELATIONSHIPS.value]),
-        catalog_catalog_item_link_repository       = R.CatalogToCatalogItemLinkRepository(db[CollectionNames.CATALOG_CATALOG_ITEM_LINKS.value]),
-        catalog_item_catalog_alias_link_repository = R.CatalogItemToCatalogAliasLinkRepository(db[CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value]),
-        observatory_catalog_link_repository        = R.ObservatoryToCatalogLinkRepository(db[CollectionNames.OBSERVATORY_CATALOG_LINKS.value])
+        observatory_product_link_repository        = R.ObservatoryToProductLinkRepository(test_db[CollectionNames.OBSERVATORY_PRODUCT_LINKS.value]),
+        product_catalog_item_link_repository       = R.ProductToCatalogItemLinkRepository(test_db[CollectionNames.PRODUCT_CATALOGS_ITEM_LINKS.value]),
+        catalog_item_relationship_repository       = R.CatalogItemRelationshipRepository(test_db[CollectionNames.CATALOG_ITEM_RELATIONSHIPS.value]),
+        catalog_catalog_item_link_repository       = R.CatalogToCatalogItemLinkRepository(test_db[CollectionNames.CATALOG_CATALOG_ITEM_LINKS.value]),
+        catalog_item_catalog_alias_link_repository = R.CatalogItemToCatalogAliasLinkRepository(test_db[CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value]),
+        observatory_catalog_link_repository        = R.ObservatoryToCatalogLinkRepository(test_db[CollectionNames.OBSERVATORY_CATALOG_LINKS.value])
     )
     search_service = S.SearchService(
         observatory_product_link_repository        = link_manager.observatory_product_link_repository,
@@ -58,7 +50,7 @@ async def services(db):
             graph_link_manager                  = link_manager
         ),
         "search": search_service,
-        "db": db # Passed for direct assertions
+        "db": test_db # Passed for direct assertions
     }
 
 @pytest.mark.asyncio
@@ -85,7 +77,7 @@ async def test_full_observatory_workflow(services):
             root_group_id = "cat_spatial",
             name          = "Country",
             value         = "COUNTRY",
-            catalog_type  = M.CatalogType.SPATIAL,
+            catalog_type  = ENUMS.CatalogType.SPATIAL,
             level         = 0
         ))
     assert result.is_ok, f"Failed to create country catalog: {result.unwrap_err()}"
@@ -95,7 +87,7 @@ async def test_full_observatory_workflow(services):
         root_group_id = "cat_spatial",
         name          = "State",
         value         = "STATE",
-        catalog_type  = M.CatalogType.SPATIAL,
+        catalog_type  = ENUMS.CatalogType.SPATIAL,
         level         = 1,
         parent_catalog_id = "cat_country"
     ))
@@ -106,7 +98,7 @@ async def test_full_observatory_workflow(services):
         root_group_id = "cat_spatial",
         name          = "Municipality",
         value         = "MUNICIPALITY",
-        catalog_type  = M.CatalogType.SPATIAL,
+        catalog_type  = ENUMS.CatalogType.SPATIAL,
         level         = 2,
         parent_catalog_id = "cat_state"
     ))
@@ -118,7 +110,7 @@ async def test_full_observatory_workflow(services):
         root_group_id = "cat_cie10",
         name          = "Chapter",
         value         = "CHAPTER",
-        catalog_type  = M.CatalogType.INTEREST,
+        catalog_type  = ENUMS.CatalogType.INTEREST,
         level         = 0
     ))
     assert result.is_ok, f"Failed to create chapter catalog: {result.unwrap_err()}"
@@ -127,7 +119,7 @@ async def test_full_observatory_workflow(services):
         root_group_id = "cat_cie10",
         name          = "Category",
         value         = "CATEGORY",
-        catalog_type  = M.CatalogType.INTEREST,
+        catalog_type  = ENUMS.CatalogType.INTEREST,
         level         = 1,
         parent_catalog_id = "cat_chapter"
     ))
@@ -139,7 +131,7 @@ async def test_full_observatory_workflow(services):
         root_group_id = "cat_sex",
         name          = "Sex",
         value         = "SEX",
-        catalog_type  = M.CatalogType.INTEREST,
+        catalog_type  = ENUMS.CatalogType.INTEREST,
         level         = 0
     ))
     assert result.is_ok, f"Failed to create sex catalog: {result.unwrap_err()}"
@@ -150,33 +142,33 @@ async def test_full_observatory_workflow(services):
         root_group_id = "cat_temporal",
         name          = "Temporal Variable",
         value         = "TEMPORAL",
-        catalog_type  = M.CatalogType.TEMPORAL,
+        catalog_type  = ENUMS.CatalogType.TEMPORAL,
         level         = 0
     ))
     assert result.is_ok, f"Failed to create temporal catalog: {result.unwrap_err()}"
 # SPATIAL: Mexico -> Tamaulipas -> Ciudad Victoria
-    mx = M.CatalogItemX(catalog_item_id="MX", name="Mexico", value="MX", code=1, value_type=M.CatalogItemValueType.STRING, description="")
-    tam = M.CatalogItemX(catalog_item_id="TAM", name="Tamaulipas", value="TAM", code=2, value_type=M.CatalogItemValueType.STRING, description="")
+    mx = M.CatalogItemX(catalog_item_id="MX", name="Mexico", value="MX", code=1, value_type=ENUMS.CatalogItemValueType.STRING, description="")
+    tam = M.CatalogItemX(catalog_item_id="TAM", name="Tamaulipas", value="TAM", code=2, value_type=ENUMS.CatalogItemValueType.STRING, description="")
     
-    slp = M.CatalogItemX(catalog_item_id="SLP", name="San Luis Potosi", value="SLP", code=3, value_type=M.CatalogItemValueType.STRING, description="")
+    slp = M.CatalogItemX(catalog_item_id="SLP", name="San Luis Potosi", value="SLP", code=3, value_type=ENUMS.CatalogItemValueType.STRING, description="")
     
 
-    vic = M.CatalogItemX(catalog_item_id="VIC", name="Ciudad Victoria", value="VIC", code=3, value_type=M.CatalogItemValueType.STRING, description="")
+    vic = M.CatalogItemX(catalog_item_id="VIC", name="Ciudad Victoria", value="VIC", code=3, value_type=ENUMS.CatalogItemValueType.STRING, description="")
     vic_aliases =[
         M.CatalogItemAlias(
             catalog_item_alias_id="CIUDAD_VICTORIA",
             value="CIUDAD_VICTORIA",
-            value_type=M.CatalogItemValueType.STRING,
+            value_type=ENUMS.CatalogItemValueType.STRING,
         ),
         M.CatalogItemAlias(
             catalog_item_alias_id="CD_VICTORIA",
             value="CD_VICTORIA",
-            value_type=M.CatalogItemValueType.STRING,
+            value_type=ENUMS.CatalogItemValueType.STRING,
         ),
         M.CatalogItemAlias(
             catalog_item_alias_id="VICTORIA",
             value="VICTORIA",
-            value_type=M.CatalogItemValueType.STRING,
+            value_type=ENUMS.CatalogItemValueType.STRING,
         )
     ]
 
@@ -198,8 +190,8 @@ async def test_full_observatory_workflow(services):
         assert r_alias.is_ok, f"Failed to add alias {alias.value} to Ciudad Victoria: {r_alias.unwrap_err()}"
 
     # CIE10: C (Neoplasms) -> C50 (Breast Cancer)
-    c_chap = M.CatalogItemX(catalog_item_id="C", name="Chapter C: Neoplasms", value="C", code=1, value_type=M.CatalogItemValueType.STRING, description="")
-    c_50 = M.CatalogItemX(catalog_item_id="C50", name="Breast Cancer", value="C50", code=2, value_type=M.CatalogItemValueType.STRING, description="")
+    c_chap = M.CatalogItemX(catalog_item_id="C", name="Chapter C: Neoplasms", value="C", code=1, value_type=ENUMS.CatalogItemValueType.STRING, description="")
+    c_50 = M.CatalogItemX(catalog_item_id="C50", name="Breast Cancer", value="C50", code=2, value_type=ENUMS.CatalogItemValueType.STRING, description="")
     
     r4 = await catalog_service.add_item_to_catalog("cat_chapter", c_chap)
     assert r4.is_ok, f"Failed to add Chapter C Neoplasms to chapter catalog: {r4.unwrap_err()}"
@@ -208,22 +200,22 @@ async def test_full_observatory_workflow(services):
     assert r5.is_ok, f"Failed to add Breast Cancer to category catalog: {r5.unwrap_err()}"
 
     # SEX
-    r6 = await catalog_service.add_item_to_catalog("cat_sex", M.CatalogItemX(catalog_item_id="MALE", name="Male", value="MALE", code=1, value_type=M.CatalogItemValueType.STRING, description=""))
+    r6 = await catalog_service.add_item_to_catalog("cat_sex", M.CatalogItemX(catalog_item_id="MALE", name="Male", value="MALE", code=1, value_type=ENUMS.CatalogItemValueType.STRING, description=""))
     assert r6.is_ok, f"Failed to add Male to sex catalog: {r6.unwrap_err()}"
-    r7 = await catalog_service.add_item_to_catalog("cat_sex", M.CatalogItemX(catalog_item_id="FEMALE", name="Female", value="FEMALE", code=2, value_type=M.CatalogItemValueType.STRING, description=""))
+    r7 = await catalog_service.add_item_to_catalog("cat_sex", M.CatalogItemX(catalog_item_id="FEMALE", name="Female", value="FEMALE", code=2, value_type=ENUMS.CatalogItemValueType.STRING, description=""))
     assert r7.is_ok, f"Failed to add Female to sex catalog: {r7.unwrap_err()}"
 
     # TEMPORAL (Saved as ISO string padded to the start of the defined period)
     r8 = await catalog_service.add_item_to_catalog("cat_time", M.CatalogItemX(
-        catalog_item_id="Y2023", name="2023", value="2023-01-01T00:00:00Z", code=2023, value_type=M.CatalogItemValueType.STRING, description=""
+        catalog_item_id="Y2023", name="2023", value="2023-01-01T00:00:00Z", code=2023, value_type=ENUMS.CatalogItemValueType.STRING, description=""
     ))
     assert r8.is_ok, f"Failed to add 2023 to time catalog: {r8.unwrap_err()}"
     r9 = await catalog_service.add_item_to_catalog("cat_time", M.CatalogItemX(
-        catalog_item_id="Y2024", name="2024", value="2024", code=2024, value_type=M.CatalogItemValueType.STRING, description=""
+        catalog_item_id="Y2024", name="2024", value="2024", code=2024, value_type=ENUMS.CatalogItemValueType.STRING, description=""
     ))
     assert r9.is_ok, f"Failed to add 2024 to time catalog: {r9.unwrap_err()}"
     r10 = await catalog_service.add_item_to_catalog("cat_time", M.CatalogItemX(
-        catalog_item_id="Y2025_05", name="May 2025", value="2025-05-01T00:00:00Z", code=2025, value_type=M.CatalogItemValueType.STRING, description=""
+        catalog_item_id="Y2025_05", name="May 2025", value="2025-05-01T00:00:00Z", code=2025, value_type=ENUMS.CatalogItemValueType.STRING, description=""
     ))
     assert r10.is_ok, f"Failed to add May 2025 to time catalog: {r10.unwrap_err()}"
 

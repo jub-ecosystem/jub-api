@@ -1,5 +1,6 @@
 import pytest 
-from jubapi.models.v2 import UserProfileX, UserPreferences, AppearanceSettings, ExplorationSettings, ExportSettings, ThemeEnum, ViewModeEnum, ExportFormatEnum
+from jubapi.models.v2 import UserProfileX, UserPreferences, AppearanceSettings, ExplorationSettings, ExportSettings
+from jubapi.enums.v2 import ThemeEnum, ViewModeEnum, ExportFormatEnum
 
 
 def test_user_profile_creation():

@@ -15,6 +15,11 @@ class CollectionNames(Enum):
     CATALOG_ITEM_CATALOG_ALIAS_LINKS = "catalog_item_catalog_alias_links"
     OBSERVATORY_CATALOG_LINKS        = "observatory_catalog_links"
 
+    NOTIFICATIONS                   = "notifications"
+    TASKS                           = 'tasks'
+    DATA_SOURCES                    = "data_sources"
+    DATA_RECORDS                    = "data_records"
+
     USER_PROFILES                   = "user_profiles"    
     OBSERVATORIES_V1                = "observatories_v1"
     PRODUCTS_V1                     = "products_v1"

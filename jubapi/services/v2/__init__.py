@@ -1,17 +1,22 @@
-from pymongo.results import UpdateResult,DeleteResult
-from typing import List,Optional,Tuple,Dict,Any
-import jubapi.models.v2 as M
+
+import os
+import uuid 
 import asyncio
+import datetime as DT
+from option import Result,Ok,Err
+from typing import List,Optional,Tuple,Dict,Any,Set
+from pymongo.results import UpdateResult,DeleteResult
+
+import jubapi.models.v2 as M
 import jubapi.repositories.v2 as R
 import jubapi.dto.v2 as DTO
-import commonx.dto.xolo as XoloDTO
+import jubapi.enums.v2 as ENUMS
 from jubapi.querylang.v2.parser  import QueryAST,Condition,ConditionOperators
+from jubapi.querylang.v2.translator import ASTToMongoTranslator
 from jubapi.log.log import Log
 import jubapi.errors as EX
 from jubapi.db.constants import CollectionNames
-from option import Result,Ok,Err
-import os
-import datetime as DT
+import commonx.dto.xolo as XoloDTO
 from xolo.client.client import XoloClient
 
 L = Log(
@@ -933,12 +938,13 @@ class SearchService:
             })
             return Err(EX.JubError.from_exception(e))
         
-    async def search(self,query:str,observatory_id: Optional[str] = None,skip:int=0,limit:int=10)->Result[DTO.ProductXDTO, EX.JubError]:
+    async def search(self,query:str,observatory_id: Optional[str] = None,skip:int=0,limit:int=10)->Result[List[DTO.ProductXDTO], EX.JubError]:
         """
         Takes raw ProductX models, resolves their graph relationships to get 
         catalog item names, and returns fully hydrated ProductXDTOs.
         """
         products_result = await self.execute_query(query=query, observatory_id=observatory_id,skip=skip,limit=limit)
+        
         if products_result.is_err:
             return Err(products_result.unwrap_err())
         
@@ -969,8 +975,8 @@ class SearchService:
 
 
         # 3. Map product_id -> list of catalog_item_ids and gather unique item IDs
-        product_to_item_ids = {}
-        unique_item_ids = set()
+        product_to_item_ids:Dict[str, List[str]] = {}
+        unique_item_ids:Set[str] = set()
 
         for pid, catalog_items_links in zip(product_ids, links):
             # Assuming your link model has a property called 'catalog_item_id'
@@ -992,14 +998,24 @@ class SearchService:
         catalog_items = await asyncio.gather(*item_tasks)
 
         # 5. Create a fast lookup dictionary: item_id -> item name
-        item_lookup= {}
+        item_lookup:Dict[str, str] = {}
+
+            
+        item_metadata:Dict[str, List[DTO.VariableMetadataDTO]] = {}
         for item in catalog_items: 
             if item.is_err:
                 L.error(f"Failed to fetch catalog item {item.unwrap_err()}")
                 continue
             item_model = item.unwrap()
             item_lookup[item_model.catalog_item_id] = item_model.name
-            
+            item_metadata.setdefault(item_model.catalog_type.value, []).append(
+                DTO.VariableMetadataDTO(
+                    code=item_model.code,
+                    name=item_model.name,
+                    value=item_model.value,
+                    description=item_model.description
+                )
+            )
             
             
         # item_lookup = {
@@ -1008,7 +1024,7 @@ class SearchService:
         # }
 
         # 6. Hydrate and build the DTOs
-        response_dtos = []
+        response_dtos:List[DTO.ProductXDTO] = []
         for p in products:
             # Get the raw item IDs linked to this specific product
             p_item_ids = product_to_item_ids.get(p.product_id, [])
@@ -1027,6 +1043,11 @@ class SearchService:
             )
             dto.tags = p_item_ids
             dto.attributes = human_readable_attributes
+            default_spatial_var =   item_metadata.get("SPATIAL", [])
+            dto.spatial_variable =  default_spatial_var[0] if default_spatial_var else DTO.VariableMetadataDTO()
+            default_temporal_var =   item_metadata.get("TEMPORAL", [])
+            dto.temporal_variable =  default_temporal_var[0] if default_temporal_var else DTO.VariableMetadataDTO()
+            dto.interest_variable = item_metadata.get("INTEREST", [])
             response_dtos.append(dto)
 
         return Ok(response_dtos)
@@ -1058,13 +1079,16 @@ class SearchService:
             except Exception as e:
                 L.error(f"Error resolving alias for {raw_target}: {e}")
                 return Err(EX.JubError.from_exception(e))       
+    
     def __is_global_wildcard(self, condition: Condition) -> bool:
             """Checks if the user just passed '*' with no prefix (e.g., VS(*))."""
             path = condition.item_path
+            L.debug(f"Checking if condition {condition} is a global wildcard. Path: {path}")
             # Check for strings "*", "", or lists ["*"], []
             if isinstance(path, list):
                 return len(path) == 0 or (len(path) == 1 and path[0] == "*")
             return path == "*" or path == ""
+    
     async def execute_query(self, query: str, observatory_id: Optional[str] = None,skip:int= 0,limit:int=10) -> Result[List[M.ProductX], EX.JubError]:
         """
         The main entry point for the Jub search bar.
@@ -1072,10 +1096,10 @@ class SearchService:
         try:
             # 1. Parse string to AST
             ast = QueryAST.parse(query)
-            # print("AST",ast)
+            print("AST",ast)
             # 2. Resolve AST conditions into required sets of Catalog Item IDs
             required_sets_res = await self._build_required_sets(ast)
-            print(required_sets_res)
+            print("Required Sets Result:", required_sets_res)
 
             # print("_"*20)
             if required_sets_res.is_err:
@@ -1112,11 +1136,15 @@ class SearchService:
                     # skip_group is a flag to identify if we have a global wildcard in the group. If we do, we can skip processing the rest of the conditions because the wildcard already allows any tag to match.
                     skip_group = False
                     for cond in query.group.conditions:
-                        if self.__is_global_wildcard(cond):
+                        is_global_wildcard = self.__is_global_wildcard(cond)
+                        print("Processing condition for OR group:", cond,is_global_wildcard)
+                        
+                        if is_global_wildcard:
                             skip_group = True
                             break
                         # If it's not a global wildcard, we resolve the condition as normal and add its valid tags to the combined set.
                         res = await self._resolve_condition(cond)
+                        print("Condition resolution result for", cond, "is", res)
                         if res.is_err: 
                             L.error(f"Failed to resolve condition {cond}: {res.unwrap_err()}")
                             return res
@@ -1168,6 +1196,12 @@ class SearchService:
                 "message": "Resolving condition",
                 "condition": condition.model_dump()
             })
+            path       = condition.item_path
+            is_list    = isinstance(path, list)
+            path_val   = path[-1] if is_list and len(path) > 0 else path
+
+
+            # ==== Path 1: Handle temporal conditions  ======
             if condition.catalog_value == "TEMPORAL" and condition.operator not in ["WILDCARD"]:
                 mongo_op_map = {
                     ">": "$gt", ">=": "$gte", "<": "$lt", "<=": "$lte", "=": "$eq",
@@ -1203,7 +1237,41 @@ class SearchService:
                 })
                 return Ok([doc["catalog_item_id"] for doc in docs])
 
+            # Path 2: NUMERICAL MATH (Querying by 'code')
+            elif condition.operator in [">", ">=", "<", "<=", "="]:
+                # e.g., AGE >= 20. catalog_value="AGE", path_val="20"
+                mongo_op_map = {">": "$gt", ">=": "$gte", "<": "$lt", "<=": "$lte", "=": "$eq"}
+                mongo_op     = mongo_op_map.get(condition.operator)
+                
+                try:
+                    num_val = float(path_val) # Convert the string "20" to a number
+                except ValueError:
+                    return Err(EX.ValidationError(f"Expected a number for condition {condition.catalog_value}, got {path_val}"))
 
+                cat_val = condition.catalog_value
+                
+                # Find all items that belong to this catalog (e.g., AGE or AGE_1) 
+                # AND whose 'code' matches the mathematical condition
+                cursor = self.catalog_item_repository.collection.find({
+                    "catalog_item_id": {"$regex": f"^{cat_val}$|^{cat_val}_"},
+                    "code": {mongo_op: num_val}
+                })
+                docs = await cursor.to_list(length=None)
+                return Ok([doc["catalog_item_id"] for doc in docs])
+
+            # ==========================================
+            # PATH 3: PREFIX / ROOT MATCH (e.g., VI(AGE))
+            # ==========================================
+            elif condition.operator == "EXACT" and (not path or len(path) == 0):
+                cat_val = condition.catalog_value
+                L.debug(f"Handling PREFIX match for root catalog: {cat_val}")
+                
+                # Fetch the root item itself AND all its numbered buckets/sub-items
+                cursor = self.catalog_item_repository.collection.find({
+                    "catalog_item_id": {"$regex": f"^{cat_val}$|^{cat_val}_"}
+                })
+                docs = await cursor.to_list(length=None)
+                return Ok([doc["catalog_item_id"] for doc in docs])
             path       = condition.item_path
             is_list    = isinstance(path, list)
             raw_target = ""
@@ -1243,6 +1311,7 @@ class SearchService:
 
                 # return Err(EX.JubError(f"Invalid wildcard format in condition: {condition}"))
             elif condition.operator == "EXACT":
+                # print("Handling EXACT condition with path:", path)
                 raw_target = path[-1] if is_list else path
             else:
                 return Err(EX.UnknownError(f"Unsupported operator in condition: {condition.operator}"))
@@ -1251,7 +1320,7 @@ class SearchService:
 
             # Alias resolution: If the user typed an alias (e.g., '28'), we need to find the canonical ID (e.g., 'TAM') 
             canonical_res = await self._get_canonical_id(raw_target)
-            
+            print("Canonical resolution result:", canonical_res)
             if canonical_res.is_err:
                 L.error(f"Failed to resolve canonical ID for {raw_target}: {canonical_res.unwrap_err()}")
                 return Err(EX.JubError(f"Failed to resolve canonical ID for {raw_target}: {canonical_res.unwrap_err()}"))
@@ -1361,14 +1430,79 @@ class SearchService:
         return pipeline
 
 
+class NotificationService:
+    def __init__(self, repository: R.NotificationsRepository):
+        self.notification_repo = repository
+
+    async def trigger_notification(self, dto: DTO.CreateNotificationDTO) -> Result[str, EX.JubError]:
+        """
+        Creates a new notification. This will be called internally by other services 
+        (e.g., after an Observatory is created or a CSV finishes processing).
+        """
+        print("Triggering notification with DTO:", dto)
+        new_notification = M.Notification(
+            notification_id = f"notif_{uuid.uuid4().hex[:12]}",
+            user_id         = dto.user_id,
+            status          = dto.status,
+            operation       = dto.operation,
+            entity          = dto.entity_type,
+            entity_id       = dto.entity_id,
+            title           = dto.title,
+            message         = dto.message,
+            is_read         = False
+            # created_at is automatically handled by the model's default_factory
+        )
+        
+        return await self.notification_repo.insert(new_notification)
+
+    async def get_user_notifications(self, user_id: str, unread_only: bool = False, limit: int = 50) -> Result[List[M.Notification], EX.JubError]:
+        """Fetches notifications for the user's UI."""
+        if unread_only:
+            return await self.notification_repo.get_unread_by_user(user_id, limit)
+        return await self.notification_repo.get_all_by_user(user_id, limit)
+
+    async def is_my_notification(self, notification_id: str, user_id: str) -> Result[bool, EX.JubError]:
+        """Checks if a notification belongs to the user (for authorization)."""
+        return await self.notification_repo.check_ownership(notification_id, user_id)
+    async def mark_as_read(self, notification_id: str, user_id: str) -> Result[M.Notification, EX.JubError]:
+        """Marks a single notification as read."""
+        res = await self.notification_repo.get_by_id_and_user(notification_id,user_id=user_id)
+        if res.is_err:
+            L.error(f"Failed to fetch notification {notification_id} for user {user_id}: {res.unwrap_err()}")
+            return Err(EX.JubError(f"Failed to fetch notification: {res.unwrap_err()}"))
+        return await self.notification_repo.mark_as_read(notification_id)
+
+    async def mark_all_as_read(self, user_id: str) -> Result[int, EX.JubError]:
+        """Marks all unread notifications for a user as read."""
+        return await self.notification_repo.mark_all_as_read(user_id)
+
+    async def clear_read_notifications(self, user_id: str) -> Result[int, EX.JubError]:
+        """Deletes all notifications the user has already read."""
+        return await self.notification_repo.delete_read_by_user(user_id)
 
 class UsersProfileXService:
     def __init__(self, 
         user_profile_repository: R.UserProfileXRepository,
-        auth_service: AuthenticationService
+        auth_service: AuthenticationService,
+        notification_service: NotificationService
     ):
         self.user_profile_repository = user_profile_repository
-        self.auth_service = auth_service
+        self.auth_service            = auth_service
+        self.notification_service    = notification_service
+
+
+    async def get_user_preferences(self, user_id: str) -> Result[M.UserPreferences, EX.JubError]:
+        try:
+            user_result = await self.user_profile_repository.get_by_id(user_id)
+            if user_result.is_err:
+                return Err(EX.JubError(f"User with ID {user_id} not found: {user_result.unwrap_err()}"))
+            
+            user = user_result.unwrap()
+            return Ok(user.settings)
+        except Exception as e:
+            L.error(f"Error fetching user profile for {user_id}: {e}")
+            return Err(EX.JubError.from_exception(e))
+        
     async def update_user_preferences(self, user_id: str, new_settings: DTO.UserPreferencesDTO) -> Result[M.UserProfileX, EX.JubError]:
         try:
             
@@ -1377,6 +1511,19 @@ class UsersProfileXService:
             if update_result.is_err:
                 L.error(f"Failed to update user profile for {user_id}: {update_result.unwrap_err()}")
                 return Err(EX.JubError(f"Failed to update user profile: {update_result.unwrap_err()}"))
+            res = await self.notification_service.trigger_notification(
+                DTO.CreateNotificationDTO(
+                    user_id     = user_id,
+                    status      = ENUMS.NotificationStatusEnum.INFO,
+                    entity_id   = user_id,
+                    entity_type = ENUMS.NotificationEntityEnum.USER_PROFILE,
+                    operation   = ENUMS.NotificationOperationEnum.UPDATE,
+                    message     = "Tus preferencias han sido actualizadas exitosamente.",
+                    title       = "Preferencias actualizadas",
+                )
+            )
+            if res.is_err:
+                L.error(f"Failed to trigger notification after updating preferences for {user_id}: {res.unwrap_err()}")
             return Ok(update_result.unwrap())
         except Exception as e:
             L.error(f"Error updating user profile for {user_id}: {e}")
@@ -1506,3 +1653,258 @@ class UsersProfileXService:
         except Exception as e:
             L.error(f"Error fetching user profile for username {username}: {e}")
             return Err(EX.JubError.from_exception(e))
+        
+
+
+
+class TasksService:
+    def __init__(
+        self, 
+        repository: R.TaskRepository,
+        notification_service: NotificationService
+    ):
+        self.task_repo = repository
+        self.notification_service = notification_service
+
+    async def create_task(self, dto: DTO.CreateTaskDTO) -> Result[str, EX.JubError]:
+        """
+        Creates a new task with its initial attempt history.
+        """
+        now = DT.datetime.now(DT.timezone.utc)
+        
+        # Create the very first attempt
+        initial_attempt = M.TaskAttempt(
+            attempt_number = 1,
+            status         = ENUMS.TaskStatusEnum.PENDING,
+            start_time     = now
+        )
+        
+        new_task = M.TaskX(
+            task_id          = f"tsk_{uuid.uuid4().hex[:12]}",
+            user_id          = dto.user_id,
+            observatory_id   = dto.observatory_id,
+            title            = dto.title,
+            description      = dto.description,
+            operation        = dto.operation,
+            current_status   = ENUMS.TaskStatusEnum.PENDING,
+            progress_message = "En cola...",
+            attempts         = [initial_attempt],
+            created_at       = now,
+            updated_at       = now
+        )
+        
+        return await self.task_repo.insert(new_task)
+
+    async def get_user_tasks(self, user_id: str, limit: int = 50) -> Result[List[DTO.TaskXDTO], EX.JubError]:
+        """
+        Fetches the recent tasks to populate the UI list.
+        """
+        result = await self.task_repo.get_tasks_by_user(user_id, limit)
+        if result.is_err:
+            L.error(f"Failed to fetch tasks for user {user_id}: {result.unwrap_err()}")
+            return Err(EX.JubError(f"Failed to fetch tasks: {result.unwrap_err()}"))
+        tasks = result.unwrap()
+        return Ok([DTO.TaskXDTO.from_model(task) for task in tasks])
+
+    async def get_task_details(self, task_id: str, user_id: str) -> Result[DTO.TaskXDTO, EX.JubError]:
+        """
+        Fetches the full details of a single task, including its attempt history, for the task details view.
+        """
+        
+        task_result = await self.task_repo.get_by_id(task_id)
+        if task_result.is_err:
+            e = task_result.unwrap_err()
+            L.error(f"Failed to fetch task {task_id}: {e}")
+            return Err(e)
+        
+        task = task_result.unwrap()
+        if task.user_id != user_id:
+            L.warning(f"Unauthorized access attempt to task {task_id} by user {user_id}")
+            return Err(EX.AuthorizationError("You are not authorized to view this task."))
+        
+        return Ok(DTO.TaskXDTO.from_model(task))
+
+    async def get_stats(self, user_id: str) -> Result[DTO.TasksStatsDTO, EX.JubError]:
+        """
+        Fetches the aggregate counters for the UI (In Progress, Completed, Failed).
+        """
+        return await self.task_repo.get_task_statistics(user_id)
+
+    async def update_live_progress(
+        self, 
+        task_id: str, 
+        percentage: int, 
+        message: str, 
+        status: ENUMS.TaskStatusEnum = ENUMS.TaskStatusEnum.RUNNING
+    ) -> Result[bool, EX.JubError]:
+        """
+        Updates the progress bar in the UI. 
+        Intended for high-frequency calls by background workers.
+        """
+        return await self.task_repo.update_progress(task_id, percentage, message, status)
+
+    async def complete_task(self, task_id: str, success: bool, error_msg: str = None) -> Result[M.TaskX, EX.JubError]:
+        """
+        Finalizes a task attempt. Synchronizes the root status and the attempt history.
+        Called by the background worker when the job succeeds or crashes.
+        """
+        task_result = await self.task_repo.get_by_id(task_id)
+        if task_result.is_err:
+            return task_result
+            
+        task = task_result.unwrap()
+        final_status = ENUMS.TaskStatusEnum.SUCCESS if success else ENUMS.TaskStatusEnum.FAILED
+        now = DT.datetime.now(DT.timezone.utc)
+        
+        # 1. Sync Root Level (UI)
+        task.current_status = final_status
+        task.progress_percentage = 100 if success else task.progress_percentage
+        task.progress_message = "Completado" if success else f"Error: {error_msg}"
+        task.updated_at = now
+        
+        # 2. Sync History Level (Audit Trail)
+        if task.attempts:
+            task.attempts[-1].status = final_status
+            task.attempts[-1].end_time = now
+            if error_msg:
+                task.attempts[-1].error_message = error_msg
+
+        update_data = task.model_dump(exclude={"task_id"}, mode="python") 
+        return await self.task_repo.update(task_id, update_data)
+
+    async def retry_task(self, task_id: str,user_id: str) -> Result[bool, EX.JubError]:
+        """
+        Handles the user clicking 'Reintentar' on the UI.
+        Appends a new attempt and resets the root UI state to pending.
+        """
+        task_result = await self.task_repo.get_by_id(task_id)
+        if task_result.is_err:
+            return Err(EX.NotFound(f"Task {task_id} not found."))
+            
+        task = task_result.unwrap()
+        if task.user_id != user_id:
+            return Err(EX.AuthorizationError("You are not authorized to retry this task."))
+        
+        # Optional safeguard: Prevent retrying tasks that are currently running or already succeeded
+        if task.current_status in [ENUMS.TaskStatusEnum.RUNNING, ENUMS.TaskStatusEnum.SUCCESS]:
+            return Err(EX.JubError(f"Cannot retry task in {task.current_status} state."))
+
+        now                 = DT.datetime.now(DT.timezone.utc)
+        next_attempt_number = len(task.attempts) + 1
+        
+        new_attempt = M.TaskAttempt(
+            attempt_number = next_attempt_number,
+            status         = ENUMS.TaskStatusEnum.PENDING,
+            start_time     = now
+        )
+        
+        return await self.task_repo.add_retry_attempt(task_id, new_attempt)
+
+
+
+class DataIngestionService:
+    def __init__(self, source_repo: R.DataSourceRepository, record_repo: R.DataRecordRepository):
+        self.source_repo = source_repo
+        self.record_repo = record_repo
+
+    async def register_data_source(self, name: str, description: str, bucket_id: str="", ball_id: str="") -> Result[M.DataSource, EX.JubError]:
+        """
+        Registers the CSV file metadata in the database.
+        """
+        new_source = M.DataSource(
+            source_id   = f"src_{uuid.uuid4().hex[:12]}",
+            name        = name,
+            description = description,
+            format      = ENUMS.DataSourceFormatEnum.CSV,
+            bucket_id   = bucket_id,
+            ball_id     = ball_id
+        )
+        
+        insert_result = await self.source_repo.insert(new_source)
+        if insert_result.is_err:
+            return insert_result
+            
+        return Ok(new_source)
+
+    async def ingest_parsed_records(self, source_id: str, records: List[M.DataRecord]) -> Result[int, EX.JubError]:
+        """
+        Takes a list of normalized DataRecord objects and saves them to the database.
+        It processes them in chunks to prevent memory overload.
+        """
+        # First, ensure the data source actually exists
+        source_check = await self.source_repo.get_by_id(source_id)
+        if source_check.is_err:
+            return Err(EX.NotFound(f"Data source {source_id} does not exist."))
+
+        # Define a chunk size (e.g., insert 5,000 rows at a time)
+        CHUNK_SIZE = 5000
+        total_inserted = 0
+        
+        for i in range(0, len(records), CHUNK_SIZE):
+            chunk = records[i:i + CHUNK_SIZE]
+            result = await self.record_repo.insert_many(chunk)
+            
+            if result.is_err:
+                # If a chunk fails, you might want to rollback or return the error
+                return result 
+                
+            total_inserted += result.unwrap()
+            
+        return Ok(total_inserted)
+
+    async def delete_data_source(self, source_id: str) -> Result[bool, EX.JubError]:
+        """
+        Removes the data source and cascades the deletion to all its records.
+        """
+        # 1. Delete all associated records first
+        delete_records_result = await self.record_repo.delete_by_source(source_id)
+        if delete_records_result.is_err:
+            return delete_records_result
+
+        # 2. Delete the source metadata
+        delete_source_result = await self.source_repo.delete(source_id)
+        return delete_source_result
+    
+
+
+class DataQueryService:
+    def __init__(self, record_repo: R.DataRecordRepository):
+        self.record_repo = record_repo
+
+    async def query(self, source_id: str, raw_dsl_string: str)->Result[List[M.DataRecord], EX.JubError]:
+        """
+        Takes a raw Jub DSL string, parses it, translates it, 
+        and fetches the matching records from the database.
+        """
+        try:
+            # 1. Parse the string into the Abstract Syntax Tree (AST)
+            # This will raise a ValueError if the string is malformed
+            ast = QueryAST.parse(raw_dsl_string)
+            L.debug({
+                "event": "DSL_PARSE_SUCCESS",
+                "message": "Successfully parsed DSL into AST",
+                "raw_dsl_string": raw_dsl_string,
+                "ast": ast.model_dump()
+            })
+            # 2. Translate the AST into a MongoDB dictionary
+            # This will raise a ValueError if the logic is impossible (e.g., VS with AND)
+            mongo_query = ASTToMongoTranslator.translate(ast)
+            L.debug({
+                "event": "DSL_TRANSLATION_SUCCESS",
+                "message": "Successfully translated AST to MongoDB query",
+                # "mongo_query": mongo_query
+            })
+            # 3. Execute the query against the database
+            x = await self.record_repo.find_by_query(source_id, mongo_query)
+            return x
+            
+        except ValueError as ve:
+            # Catch errors thrown by your parser or translator
+            L.warning(f"DSL Parsing/Translation Error: {ve}")
+            return Err(EX.ValidationError(f"Invalid query syntax or logic: {str(ve)}"))
+            
+        except Exception as e:
+            # Catch unexpected database or system errors
+            L.error(f"Unexpected error executing query '{raw_dsl_string}': {e}")
+            return Err(EX.UnknownError(f"Failed to execute query: {str(e)}"))
+

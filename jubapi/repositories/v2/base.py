@@ -22,6 +22,15 @@ class BaseRepository(Generic[T]):
         self.model_class = model_class
         self.id_field = id_field
 
+    async def find(self, query: dict, limit: int = 100) -> Result[List[T], EX.JubError]:
+        """Finds documents based on a MongoDB query dict."""
+        try:
+            cursor = self.collection.find(query).limit(limit)
+            return Ok([self.model_class.model_validate(doc) for doc in await cursor.to_list(length=limit)])
+        except Exception as e:
+            L.error(f"Error fetching items: {e}")
+            return Err(EX.UnknownError(str(e)))
+        
     async def insert(self, item: T) -> Result[str,EX.JubError]:
         """Inserts a Pydantic model into MongoDB."""
         # Convert Pydantic model to dict, excluding None values if preferred
@@ -40,7 +49,7 @@ class BaseRepository(Generic[T]):
         try:
             data = await self.collection.find_one({self.id_field: item_id})
             if data:
-                return Ok(self.model_class(**data))
+                return Ok(self.model_class.model_validate(data))
             return Err(EX.NotFound(f"Item with ID {item_id} not found"))
         except Exception as e:
             L.error(f"Error fetching item by ID: {e}")
@@ -51,7 +60,7 @@ class BaseRepository(Generic[T]):
         """Fetches multiple documents by a list of custom IDs."""
         try:
             cursor = self.collection.find({self.id_field: {"$in": item_ids}})
-            return Ok([self.model_class(**doc) for doc in await cursor.to_list(length=len(item_ids))])
+            return Ok([self.model_class.model_validate(doc) for doc in await cursor.to_list(length=len(item_ids))])
         except Exception as e:
             L.error(f"Error fetching items by IDs: {e}")
             return Err(EX.UnknownError(str(e)))
@@ -60,7 +69,7 @@ class BaseRepository(Generic[T]):
         """Finds multiple documents based on a standard Mongo query dictionary."""
         try:
             cursor = self.collection.find(query).limit(limit)
-            return Ok([self.model_class(**doc) for doc in await cursor.to_list(length=limit)])
+            return Ok([self.model_class.model_validate(doc) for doc in await cursor.to_list(length=limit)])
         except Exception as e:
             L.error(f"Error fetching items: {e}")
             return Err(EX.UnknownError(str(e)))
@@ -81,7 +90,15 @@ class BaseRepository(Generic[T]):
                 return Err(EX.NotFound(f"Item with ID {item_id} not found or no changes made"))
             # Fetch the updated document
             updated_doc = await self.collection.find_one({self.id_field: item_id})
-            return Ok(self.model_class(**updated_doc))
+            return Ok(self.model_class.model_validate(updated_doc))
         except Exception as e:
             L.error(f"Error updating item: {e}")
+            return Err(EX.UnknownError(str(e)))
+    async def count(self, query: dict) -> Result[int, EX.JubError]:
+        """Counts the number of documents matching a query."""
+        try:
+            count = await self.collection.count_documents(query)
+            return Ok(count)
+        except Exception as e:
+            L.error(f"Error counting items: {e}")
             return Err(EX.UnknownError(str(e)))

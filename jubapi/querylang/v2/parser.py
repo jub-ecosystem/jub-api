@@ -4,6 +4,10 @@ from pydantic import BaseModel
 from enum import Enum
 
 # --- AST Models ---
+SPATIAL_VARIABLE    = "VS"
+TEMPORAL_VARIABLE   = "VT"
+INTEREST_VARIABLE   = "VI"
+OBSERVABLE_VARIABLE = "VO"
 
 class ConditionOperators(str, Enum):
     GREATER_THAN = ">"
@@ -60,61 +64,82 @@ class QueryAST(BaseModel):
         return date_str
     
     @staticmethod
-    def _parse_single_condition(cond_str: str,prefix:str) -> Condition:
+    def _parse_single_condition(cond_str: str, prefix: str) -> Condition:
         """Helper to parse an individual condition string."""
         cond_str = cond_str.strip()
-        if prefix == "VS":
-            catalog_value = "SPATIAL"
-        elif prefix == "VT":
-            catalog_value = "TEMPORAL"
+        
+        # Set default catalog names for standard variables
+        if prefix == SPATIAL_VARIABLE:
+            default_catalog = "SPATIAL"
+        elif prefix == TEMPORAL_VARIABLE:
+            default_catalog = "TEMPORAL"
+        elif prefix == INTEREST_VARIABLE:
+            default_catalog = "INTEREST"
+        elif prefix == OBSERVABLE_VARIABLE:
+            default_catalog = "OBSERVABLE"
         else: 
-            catalog_value = None
+            default_catalog = None
 
+        # 1. Check for Full Expressions (e.g., "AGE >= 20" or "CIE10 == 50")
+        full_expr_match = re.match(r'^([A-Za-z0-9_]+)\s*(>=|<=|>|<|!=|==|=)\s*(.*)$', cond_str)
+        if full_expr_match:
+            parsed_catalog = full_expr_match.group(1).strip()
+            operator = full_expr_match.group(2)
+            raw_val = full_expr_match.group(3).strip()
+            
+            # Normalize double equals to single equals
+            if operator == "==":
+                operator = "="
+                
+            formmated_val = QueryAST._standardize_date(raw_val) if prefix == TEMPORAL_VARIABLE else raw_val
+            
+            return Condition(
+                operator=operator,
+                catalog_value=parsed_catalog, # Will be "AGE"
+                item_path=[formmated_val]     # Will be ["20"]
+            )
 
-        # 1. Check for math/comparison operators (e.g., > 2000)
-        math_match = re.match(r'(>=|<=|>|<|!=|=)\s*(.*)', cond_str)
+        # 2. Check for Prefix Math Operators (e.g., "> 2000" inside VT)
+        math_match = re.match(r'^(>=|<=|>|<|!=|==|=)\s*(.*)$', cond_str)
         if math_match:
             operator = math_match.group(1)
             raw_val = math_match.group(2).strip()
-            print("Operator:", operator)
-            print("Raw Value:", raw_val)
-            if prefix == "VT":
-                formmated_val = QueryAST._standardize_date(raw_val)
-            else:
-                formmated_val = raw_val
+            
+            if operator == "==":
+                operator = "="
+                
+            formmated_val = QueryAST._standardize_date(raw_val) if prefix == TEMPORAL_VARIABLE else raw_val
             
             return Condition(
-                operator      = operator,
-                catalog_value = catalog_value,
-                item_path     = formmated_val
+                operator=operator,
+                catalog_value=default_catalog,
+                item_path=[formmated_val]
             )
-        # 2. Check for Hierarchy Wildcards (e.g., MX.* or MX.*.*)
-        elif '*' in cond_str:
-            # Split by dot and remove ALL wildcards to get the root path
-            parts = [p for p in cond_str.split('.') if p != '*']
-            if prefix == "VI":
-                if len(parts) == 0:
-                    catalog_value = "*"
-                    item_path = []
-                else:
-                    catalog_value = parts[0]  # The first part is the catalog value
-                    item_path = parts[1:]          # Everything after the first part is the item path
-            else:
-                item_path = parts  # For VS and VT, the entire path is relevant
-            return Condition(operator="WILDCARD", catalog_value=catalog_value, item_path=item_path)
             
-        # 3. Exact match / Hierarchy Path (e.g., CIE10.C10)
+        # 3. Check for Hierarchy Wildcards (e.g., "MX.*" or "*")
+        elif '*' in cond_str:
+            parts = [p for p in cond_str.split('.') if p != '*']
+            if prefix == INTEREST_VARIABLE:
+                if len(parts) == 0:
+                    return Condition(operator="WILDCARD", catalog_value="*", item_path=[])
+                else:
+                    return Condition(operator="WILDCARD", catalog_value=parts[0], item_path=parts[1:])
+            else:
+                return Condition(operator="WILDCARD", catalog_value=default_catalog, item_path=parts)
+                
+        # 4. Exact match / Hierarchy Path / Root Match (e.g., "CIE10.C10" or "AGE")
         else:
             parts = cond_str.split('.')
-            if prefix == "VT":
-                item_path = QueryAST._standardize_date(cond_str)  
-            elif prefix == "VI":
-                catalog_value = parts[0]  #
-                item_path = parts[1:]  # Everything after the first part is the item path
+            if prefix == TEMPORAL_VARIABLE:
+                item_path = [QueryAST._standardize_date(cond_str)]
+                return Condition(operator="EXACT", catalog_value=default_catalog, item_path=item_path)
+            
+            elif prefix == INTEREST_VARIABLE:
+                # If query is VI(AGE), parts[0] is "AGE", and parts[1:] is an empty list []
+                return Condition(operator="EXACT", catalog_value=parts[0], item_path=parts[1:])
+            
             else:
-                item_path = parts
-            # print("Exact Match Item Path:", item_path)
-            return Condition(operator="EXACT", catalog_value=catalog_value, item_path=item_path)
+                return Condition(operator="EXACT", catalog_value=default_catalog, item_path=parts)
     @staticmethod
     def parse(query_str: str) -> "QueryAST":
         """

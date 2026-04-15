@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from jubapi.log.log import Log
 from jubapi.db import connect_to_mongo,close_mongo_connection
 from jubapi.controllers.v1 import observatories_router,catalogs_router,products_router
-from jubapi.controllers.v2 import observatories_router_v2,search_router_v2,catalogs_router_v2,jub_router_v2,users_router_v2
+import jubapi.controllers.v2 as ControllersV2
 import jubapi.config as Cfg
 
 log       = Log(
@@ -60,8 +60,10 @@ app.include_router(observatories_router,tags=["observatories"])
 app.include_router(catalogs_router,tags=["catalogs"])
 app.include_router(products_router,tags=["products"])
 # V2
-app.include_router(observatories_router_v2,prefix="/api/v2",tags=["observatories_v2"])
-app.include_router(catalogs_router_v2,prefix="/api/v2",tags=["catalogs_v2"])
-app.include_router(search_router_v2,prefix="/api/v2",tags=["search_v2"])
-app.include_router(jub_router_v2,prefix="/api/v2",tags=["JubV2"])
-app.include_router(users_router_v2,prefix="/api/v2",tags=["users_v2"])
+app.include_router(ControllersV2.observatories,prefix="/api/v2",tags=["observatories_v2"])
+app.include_router(ControllersV2.catalogs,prefix="/api/v2",tags=["catalogs_v2"])
+app.include_router(ControllersV2.search,prefix="/api/v2",tags=["search_v2"])
+app.include_router(ControllersV2.jub,prefix="/api/v2",tags=["JubV2"])
+app.include_router(ControllersV2.users,prefix="/api/v2",tags=["users_v2"])
+app.include_router(ControllersV2.notifications,prefix="/api/v2",tags=["notifications_v2"])
+app.include_router(ControllersV2.tasks,prefix="/api/v2",tags=["tasks_v2"])

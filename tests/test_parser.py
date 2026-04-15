@@ -1,5 +1,6 @@
 import pytest
-from jubapi.models.v2 import CatalogX, CatalogType
+from jubapi.models.v2 import CatalogX
+from jubapi.enums.v2 import CatalogType    
 from jubapi.querylang.v2.parser import QueryAST
 
 def test_upper_snake_str_validation():
@@ -41,7 +42,7 @@ def test_ast_parser_valid_query():
     assert ast.queries[1].group.logic == "SINGLE"
     assert ast.queries[1].group.conditions[0].operator == ">="
     assert ast.queries[1].group.conditions[0].catalog_value == "TEMPORAL"
-    assert ast.queries[1].group.conditions[0].item_path == "2000-01-01T00:00:00Z"  # Padded to full date
+    assert ast.queries[1].group.conditions[0].item_path[0] == "2000-01-01T00:00:00Z"  # Padded to full date
 
     
 def test_ast_parser_invalid_prefix():
@@ -78,7 +79,7 @@ def test_ast_parser_explicit_catalogs():
     cond_gt = vt_query.group.conditions[0]
     assert cond_gt.catalog_value == "TEMPORAL"
     assert cond_gt.operator == ">"
-    assert cond_gt.item_path == "2000-01-01T00:00:00Z"  # Padded to full date
+    assert cond_gt.item_path[0] == "2000-01-01T00:00:00Z"  # Padded to full date
     
     # 3. Verify Interest (VI) extracts the catalog dynamically from the string
     vi_query = ast.queries[2]
@@ -106,15 +107,15 @@ def test_ast_parser_temporal_date_padding():
     vt_group_1 = ast.queries[0].group
     cond_gt_2020 = vt_group_1.conditions[0]
     assert cond_gt_2020.operator == ">"
-    assert cond_gt_2020.item_path == "2020-01-01T00:00:00Z"
+    assert cond_gt_2020.item_path[0] == "2020-01-01T00:00:00Z"
     
     # 2. Verify the '2023-05' was padded to the 1st of May
     cond_lte_2023 = vt_group_1.conditions[1]
     assert cond_lte_2023.operator == "<="
-    assert cond_lte_2023.item_path == "2023-05-01T00:00:00Z"
+    assert cond_lte_2023.item_path[0] == "2023-05-01T00:00:00Z"
     
     # 3. Verify the exact match '2025-10-31' appended the correct time
     vt_group_2 = ast.queries[1].group
     cond_exact = vt_group_2.conditions[0]
     assert cond_exact.operator == "EXACT"
-    assert cond_exact.item_path == "2025-10-31T00:00:00Z"
+    assert cond_exact.item_path[0] == "2025-10-31T00:00:00Z"

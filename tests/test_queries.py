@@ -7,34 +7,35 @@ import jubapi.repositories.v2 as R
 import jubapi.models.v2 as M
 import jubapi.services.v2 as S
 from jubapi.db.constants import CollectionNames
+import jubapi.enums.v2 as ENUMS
 
+
+# @pytest.fixture(scope="function")
+# async def db():
+#     """Provides a clean test database."""
+#     client = MongoClient("mongodb://localhost:27027/")
+#     db = client.jub
+#     yield db
+#     await client.drop_database('jub_test')
 
 @pytest.fixture(scope="function")
-async def db():
-    """Provides a clean test database."""
-    client = MongoClient("mongodb://localhost:27027/")
-    db = client.jub
-    yield db
-    # await client.drop_database('jub_test')
-
-@pytest.fixture(scope="function")
-async def services(db):
+async def services(test_db):
     """Initializes all required repositories and services."""
     # 1. Repositories
-    observatory_repository        = R.ObservatoriesRepository(db[CollectionNames.OBSERVATORIES.value])
-    product_repository            = R.ProductsRepository(db[CollectionNames.PRODUCTS.value])
-    catalog_repository            = R.CatalogsRepository(db[CollectionNames.CATALOGS.value])
-    catalog_item_repository       = R.CatalogItemsRepository(db[CollectionNames.CATALOG_ITEMS.value])
-    catalog_item_value_repository = R.CatalogItemAliasesRepository(db[CollectionNames.CATALOG_ITEM_VALUES.value])
+    observatory_repository        = R.ObservatoriesRepository(test_db[CollectionNames.OBSERVATORIES.value])
+    product_repository            = R.ProductsRepository(test_db[CollectionNames.PRODUCTS.value])
+    catalog_repository            = R.CatalogsRepository(test_db[CollectionNames.CATALOGS.value])
+    catalog_item_repository       = R.CatalogItemsRepository(test_db[CollectionNames.CATALOG_ITEMS.value])
+    catalog_item_value_repository = R.CatalogItemAliasesRepository(test_db[CollectionNames.CATALOG_ITEM_VALUES.value])
     
     # 2. Link Manager
     link_manager = S.GraphLinkManager(
-        observatory_product_link_repository        = R.ObservatoryToProductLinkRepository(db[CollectionNames.OBSERVATORY_PRODUCT_LINKS.value]),
-        product_catalog_item_link_repository       = R.ProductToCatalogItemLinkRepository(db[CollectionNames.PRODUCT_CATALOGS_ITEM_LINKS.value]),
-        catalog_item_relationship_repository       = R.CatalogItemRelationshipRepository(db[CollectionNames.CATALOG_ITEM_RELATIONSHIPS.value]),
-        catalog_catalog_item_link_repository       = R.CatalogToCatalogItemLinkRepository(db[CollectionNames.CATALOG_CATALOG_ITEM_LINKS.value]),
-        catalog_item_catalog_alias_link_repository = R.CatalogItemToCatalogAliasLinkRepository(db[CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value]),
-        observatory_catalog_link_repository        = R.ObservatoryToCatalogLinkRepository(db[CollectionNames.OBSERVATORY_CATALOG_LINKS.value])
+        observatory_product_link_repository        = R.ObservatoryToProductLinkRepository(test_db[CollectionNames.OBSERVATORY_PRODUCT_LINKS.value]),
+        product_catalog_item_link_repository       = R.ProductToCatalogItemLinkRepository(test_db[CollectionNames.PRODUCT_CATALOGS_ITEM_LINKS.value]),
+        catalog_item_relationship_repository       = R.CatalogItemRelationshipRepository(test_db[CollectionNames.CATALOG_ITEM_RELATIONSHIPS.value]),
+        catalog_catalog_item_link_repository       = R.CatalogToCatalogItemLinkRepository(test_db[CollectionNames.CATALOG_CATALOG_ITEM_LINKS.value]),
+        catalog_item_catalog_alias_link_repository = R.CatalogItemToCatalogAliasLinkRepository(test_db[CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value]),
+        observatory_catalog_link_repository        = R.ObservatoryToCatalogLinkRepository(test_db[CollectionNames.OBSERVATORY_CATALOG_LINKS.value])
     )
     search_service = S.SearchService(
         observatory_product_link_repository        = link_manager.observatory_product_link_repository,
@@ -63,7 +64,7 @@ async def services(db):
             graph_link_manager                  = link_manager
         ),
         "search": search_service,
-        "db": db # Passed for direct assertions
+        "db": test_db # Passed for direct assertions
     }
 
 @pytest.fixture(autouse=True)
@@ -100,7 +101,7 @@ async def seed_database_2(services):
                 value           = str(year),
                 code            = year,
                 temporal_value  = f"{year}-01-01T00:00:00Z",
-                value_type      = M.CatalogItemValueType.DATETIME,
+                value_type      = ENUMS.CatalogItemValueType.DATETIME,
                 description     = ""
             )
         )
@@ -130,7 +131,7 @@ async def seed_database_2(services):
     for state_id, munis in states_munis.items():
         # Insert State
         await cat_srv.add_item_to_catalog("cat_spatial", M.CatalogItemX(
-            catalog_item_id=state_id, name=state_id, value=state_id, code=state_code, value_type=M.CatalogItemValueType.STRING, description=""
+            catalog_item_id=state_id, name=state_id, value=state_id, code=state_code, value_type=ENUMS.CatalogItemValueType.STRING, description=""
         ), parent_id="MX")
         
         # Insert Municipalities (using first 3 letters as ID for simplicity)
@@ -138,7 +139,7 @@ async def seed_database_2(services):
         for muni_name in munis:
             muni_id = f"{state_id}_{muni_name[:3].upper()}" 
             await cat_srv.add_item_to_catalog("cat_spatial", M.CatalogItemX(
-                catalog_item_id=muni_id, name=muni_name, value=muni_id, code=muni_code, value_type=M.CatalogItemValueType.STRING, description=""
+                catalog_item_id=muni_id, name=muni_name, value=muni_id, code=muni_code, value_type=ENUMS.CatalogItemValueType.STRING, description=""
             ), parent_id=state_id)
             muni_code += 1
         state_code += 1
@@ -147,14 +148,14 @@ async def seed_database_2(services):
     # 3. INTEREST CATALOGS (Sex, CIE10, Plot)
     # ==========================================
     # SEX
-    await cat_srv.add_item_to_catalog("cat_sex", M.CatalogItemX(catalog_item_id="FEMALE", name="Female", value="FEMALE", code=1, value_type=M.CatalogItemValueType.STRING, description=""))
-    await cat_srv.add_item_to_catalog("cat_sex", M.CatalogItemX(catalog_item_id="MALE", name="Male", value="MALE", code=2, value_type=M.CatalogItemValueType.STRING, description=""))
+    await cat_srv.add_item_to_catalog("cat_sex", M.CatalogItemX(catalog_item_id="FEMALE", name="Female", value="FEMALE", code=1, value_type=ENUMS.CatalogItemValueType.STRING, description=""))
+    await cat_srv.add_item_to_catalog("cat_sex", M.CatalogItemX(catalog_item_id="MALE", name="Male", value="MALE", code=2, value_type=ENUMS.CatalogItemValueType.STRING, description=""))
 
     # PLOT TYPE
     plot_types = ["LINE", "BAR", "PIE", "SCATTER", "HEATMAP"]
     for idx, p in enumerate(plot_types):
         await cat_srv.add_item_to_catalog("cat_plot", M.CatalogItemX(
-            catalog_item_id=p, name=f"{p} Chart", value=p, code=idx, value_type=M.CatalogItemValueType.STRING, description=""
+            catalog_item_id=p, name=f"{p} Chart", value=p, code=idx, value_type=ENUMS.CatalogItemValueType.STRING, description=""
         ))
 
 # ==========================================
@@ -174,7 +175,7 @@ async def seed_database_2(services):
             name=desc, 
             value=cap_id, # DSL matches 'II', 'IV', 'IX'
             code=0, 
-            value_type=M.CatalogItemValueType.STRING, 
+            value_type=ENUMS.CatalogItemValueType.STRING, 
             description=""
         ))
 
@@ -192,7 +193,7 @@ async def seed_database_2(services):
             name=f"{cat_id} - {desc}", 
             value=cat_id, # DSL matches 'C50', 'E11', etc.
             code=0, 
-            value_type=M.CatalogItemValueType.STRING, 
+            value_type=ENUMS.CatalogItemValueType.STRING, 
             description=""
         ), parent_id=parent_cap)
 
@@ -215,7 +216,7 @@ async def seed_database_2(services):
                 name=f"{parent_cat}.{sub_val} - {desc}", 
                 value=sub_val, # DSL matches '1', '2', '3'
                 code=0, 
-                value_type=M.CatalogItemValueType.STRING, 
+                value_type=ENUMS.CatalogItemValueType.STRING, 
                 description=""
             ), parent_id=parent_cat)
 
@@ -272,7 +273,7 @@ async def seed_database(services):
         value           = "2020",
         code            = 2020,
         temporal_value  = "2020-01-01T00:00:00Z",
-        value_type      = M.CatalogItemValueType.DATETIME,
+        value_type      = ENUMS.CatalogItemValueType.DATETIME,
         description     = ""
     ))
     await cat_srv.add_item_to_catalog(
@@ -283,7 +284,7 @@ async def seed_database(services):
             value           = "2023",
             temporal_value  = "2023-01-01T00:00:00Z",
             code            = 2023,
-            value_type      = M.CatalogItemValueType.DATETIME,
+            value_type      = ENUMS.CatalogItemValueType.DATETIME,
             description     = ""
         )
     )
@@ -295,7 +296,7 @@ async def seed_database(services):
             value           = "2024",
             temporal_value  = "2024-01-01T00:00:00Z",
             code            = 2024,
-            value_type      = M.CatalogItemValueType.DATETIME,
+            value_type      = ENUMS.CatalogItemValueType.DATETIME,
             description     = ""
         )
     )
@@ -307,18 +308,18 @@ async def seed_database(services):
             value           = "2025",
             temporal_value  = "2025-01-01T00:00:00Z",
             code            = 2025,
-            value_type      = M.CatalogItemValueType.DATETIME,
+            value_type      = ENUMS.CatalogItemValueType.DATETIME,
             description     = ""
         )
     )
 
     # 2. Seed Spatial & Interest Items (Simplified for tests)
-    await cat_srv.add_item_to_catalog("cat_spatial", M.CatalogItemX(catalog_item_id="TAM", name="Tamaulipas", value="TAM", code=1, value_type="STRING", description=""))
-    await cat_srv.add_item_to_catalog("cat_spatial", M.CatalogItemX(catalog_item_id="VIC", name="Victoria", value="VIC", code=2, value_type="STRING", description=""), parent_id="TAM")
-    await cat_srv.add_item_to_catalog("cat_spatial", M.CatalogItemX(catalog_item_id="SLP", name="San Luis Potosi", value="SLP", code=3, value_type="STRING", description=""))
+    await cat_srv.add_item_to_catalog("cat_spatial", M.CatalogItemX(catalog_item_id="TAM", name="Tamaulipas", value="TAM", code=1, value_type=ENUMS.CatalogItemValueType.STRING, description=""))
+    await cat_srv.add_item_to_catalog("cat_spatial", M.CatalogItemX(catalog_item_id="VIC", name="Victoria", value="VIC", code=2, value_type=ENUMS.CatalogItemValueType.STRING, description=""), parent_id="TAM")
+    await cat_srv.add_item_to_catalog("cat_spatial", M.CatalogItemX(catalog_item_id="SLP", name="San Luis Potosi", value="SLP", code=3, value_type=ENUMS.CatalogItemValueType.STRING, description=""))
     
-    await cat_srv.add_item_to_catalog("cat_sex", M.CatalogItemX(catalog_item_id="FEMALE", name="Female", value="FEMALE", code=1, value_type="STRING", description=""))
-    await cat_srv.add_item_to_catalog("cat_sex", M.CatalogItemX(catalog_item_id="MALE", name="Male", value="MALE", code=2, value_type="STRING", description=""))
+    await cat_srv.add_item_to_catalog("cat_sex", M.CatalogItemX(catalog_item_id="FEMALE", name="Female", value="FEMALE", code=1, value_type=ENUMS.CatalogItemValueType.STRING, description=""))
+    await cat_srv.add_item_to_catalog("cat_sex", M.CatalogItemX(catalog_item_id="MALE", name="Male", value="MALE", code=2, value_type=ENUMS.CatalogItemValueType.STRING, description=""))
 
     # 3. Seed Products
     # Product 1: Victoria, Female, 2024

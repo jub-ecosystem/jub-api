@@ -96,15 +96,23 @@ def get_product_service(link_manager: S.GraphLinkManager=Depends(get_link_manage
     return service
 
 
-
+def get_notification_service()->S.NotificationService:
+    collection = get_collection(name=DC.CollectionNames.NOTIFICATIONS.value)
+    repository = R.NotificationsRepository(collection= collection)
+    service    = S.NotificationService(
+        repository= repository
+    )
+    return service
 
 def get_user_profile_service()->S.UsersProfileXService:
-    collection = get_collection(name=DC.CollectionNames.USER_PROFILES.value)
-    repository = R.UserProfileXRepository(collection= collection)
-    auth_service = S.AuthenticationService()
+    collection           = get_collection(name=DC.CollectionNames.USER_PROFILES.value)
+    repository           = R.UserProfileXRepository(collection= collection)
+    auth_service         = S.AuthenticationService()
+    notification_service = S.NotificationService(repository=R.NotificationsRepository(get_collection(DC.CollectionNames.NOTIFICATIONS.value)))
     service = S.UsersProfileXService(
         user_profile_repository = repository,
-        auth_service=auth_service
+        auth_service            = auth_service,
+        notification_service    = notification_service
     )
     return service
 
@@ -183,3 +191,18 @@ async def get_current_user(
             detail=f"User {current_user.user_id} is disabled."
         )
     return current_user
+
+
+def get_tasks_repository()->R.TaskRepository:
+    repository = R.TaskRepository(get_collection(DC.CollectionNames.TASKS.value))
+    return repository
+
+def get_tasks_service(
+    notification_service: S.NotificationService = Depends(get_notification_service),
+    repository: R.TaskRepository = Depends(get_tasks_repository)
+)->S.TasksService:
+    service = S.TasksService(
+        repository=repository,
+        notification_service=notification_service
+    )
+    return service
