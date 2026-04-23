@@ -1,158 +1,166 @@
 # Data Model
 
-## 1. Current JSON Schemas
-Below are the JSON structures for the core entities based on the V1 (`catalog.py`, `observatory.py`, `product.py`). The fields causing performance issues due to embedding are highlighted.
+## Entity Relationship
 
-### **Catalog**
-
-The `Catalog` entity embeds all its items directly within a single document.
-
-
-
-```json
-{
-    "cid": "<String>",
-    "display_name": "<String>",
-    "kind": "<String>",
-    "items:" [
-        {
-            "value": "<String>",
-            "display_name": "<String>",
-            "code": "<Integer>",
-            "description": "<String>",
-            "metadata": {
-
-            }
-            
-
-        }
-    ]
-}
-```
-
-### **Observatory**
-
-The `Observatory` entity embeds a list of `LevelCatalogDTO` objects to define which catalogs belong to which level, rather than using relational references.
-
-```json
-{
-  "obid": "string",
-  "title": "string",
-  "description": "string",
-  "image_url": "string",
-  "catalogs": [ // <--- Embedded List
-    {
-      "level": 0,
-      "cid": "string"
-    }
-  ]
-}
+JUB API uses a graph-like structure with dedicated link collections instead of embedded arrays.
+This keeps documents small and supports many-to-many relationships without duplication.
 
 ```
+Observatory
+  │  observatory_catalog_links
+  ├──────────────────────────────► Catalog
+  │                                    │  catalog_catalog_item_links
+  │                                    └──► CatalogItem ──► child CatalogItem
+  │                                                   └──► CatalogItemAlias
+  │  observatory_product_links
+  └──────────────────────────────► Product
+                                       │  product_catalogs_item_links
+                                       └──► CatalogItem (tags)
 
-### **Product**
-
-The `Product` entity embeds its hierarchical levels directly. It lacks a direct foreign key to the Observatory, relying instead on a complex `level_path` or embedded `levels` array for association.
-
-```json
-{
-  "pid": "string",
-  "product_name": "string",
-  "product_type": "string",
-  "level_path": "string",
-  "levels": [ // <--- Embedded List
-    {
-      "index": 0,
-      "cid": "string",
-      "value": "string",
-      "kind": "string"
-    }
-  ],
-  "profile": "string",
-  "url": "string",
-  "tags": []
-}
-
+DataSource ──► DataRecord
+                   ├── spatial_id      → catalog_item_id
+                   ├── temporal_id     → datetime
+                   ├── interest_ids[]  → catalog_item_id[]
+                   └── numerical_interest_ids → { field: float }
 ```
 
-## 2. Map the current API use cases
-Analysis of the existing API endpoints and their interaction with the databse, hightlighting the performance of the current embedded model.
+---
 
-### **Create a Catalog**
-* **Step-by-Step Analysis:**
-1. **Request Reception:** The API receives a full `Catalog` JSON object. THis object containd the `cid`, metadata, and the entire list of `items` embedded within it.
+## Core Entities
 
-2. **Validation:** The service calls `find_by:cid` to verify if the catalog ID already exists.
+### Observatory
 
-3. **Single Massive Write:** If valid, the `catalog_service.create` method writes the entire object to the `catalogs` collection.
+The root context for a data platform instance.
 
-4. **Implication:** When a catalog has 1,000 items, the database performs a single, heavy I/O write operation for one massive document. This triggers complex index updates for the parent document regarding slow writes due to increased size.
+| Field | Type | Description |
+|---|---|---|
+| `observatory_id` | string | Primary key |
+| `title` | string | Human-readable name |
+| `description` | string | Short description |
+| `image_url` | string? | Optional cover image URL |
+| `is_disabled` | bool | `true` while being provisioned; `false` when live |
+| `metadata` | dict | Arbitrary key-value pairs |
 
+!!! info "Disabled flag"
+    Observatories are created with `is_disabled: true` via the setup endpoint and enabled
+    automatically when `POST /tasks/{task_id}/complete` is called with `success: true`.
 
-### **Update a Catalog Item**
+---
 
+### Catalog
 
-* **Step-by-Step Analysis:**
+A typed vocabulary of items. `catalog_type` determines how items are interpreted by the DSL.
 
-1. **No Direct Access:** There is no endpoint to update a single item directly by its ID because items do not exist as standalone documents.
+| Field | Type | Description |
+|---|---|---|
+| `catalog_id` | string | Primary key |
+| `name` | string | Human-readable label |
+| `value` | UpperSnakeStr | Normalised identifier used in DSL (e.g. `SPATIAL`, `CIE10_CANCER`) |
+| `catalog_type` | enum | `spatial` · `temporal` · `interest` |
+| `level` | int | Depth in hierarchy (0 = root) |
+| `parent_catalog_id` | string? | Parent catalog for sub-catalogs |
 
-2. **Parent Retrieval:** To change one item's name, the system must first fetch the entire parent `Catalog` document into memory.
+---
 
-3. **Full Document Rewrite:** After modifying the item in the array, the system must update the entire `Catalog` document in the database.
+### Catalog Item
 
-4. **Implication:** Updating a single item requires rewriting and re-indexing a large catalog document, creating a significant write bottleneck.
+A single vocabulary entry — a leaf node of a catalog.
 
-### Fetch an Observatory's Products
+| Field | Type | Description |
+|---|---|---|
+| `catalog_item_id` | string | Primary key. Stored verbatim in `DataRecord.spatial_id` and `interest_ids` |
+| `name` | string | Human-readable label (e.g. "Breast Cancer") |
+| `value` | UpperSnakeStr | Short normalised code (e.g. `C_MAMA`) |
+| `code` | int | Numeric code (e.g. `101`) |
+| `value_type` | enum | `string` · `datetime` |
+| `temporal_value` | datetime? | Actual datetime for temporal items |
 
+---
 
-* **Step-by-Step Analysis:**
+### Catalog Item Alias
 
-1. **Request:** The API receives an `obid` (Observatory ID) and filters.
+Alternative names or codes for a catalog item. The DSL resolver checks aliases so users
+can query by any of them.
 
-2. **Indirect Querying:** The Product entity lacks a direct `observatory_id` foreign key. Instead, it relies on an embedded `levels` array or a `level_path` string.
+| Field | Type | Description |
+|---|---|---|
+| `catalog_item_alias_id` | string | Primary key |
+| `value` | string | Alternative name, code string, or abbreviation |
 
-3. **Scanning:** The database must scan these embedded arrays (levels) across the product collection to find matches that correspond to the observatory's configuration.
+---
 
-4. **Implication:** This results in slow and complex queries because the engine must traverse embedded arrays rather than utilizing a simple, direct index lookup.
+### Product
 
+A dataset or analytical report. Tagged with catalog items across multiple dimensions.
 
-## 3. Pain Points & Proposed Solutions
+| Field | Type | Description |
+|---|---|---|
+| `product_id` | string | Primary key |
+| `name` | string | Human-readable product name |
+| `description` | string | Short description |
 
-Summary of critical issues identified in the current architecture and how the new ERM will resolve them.
+Tags (links to catalog items) drive DSL-based product discovery.
 
-### **1. Catalog Bloat**
+---
 
-* **Problem:** Embedding items increases document size significantly, forcing the database to handle heavier I/O operations. This leads to frequent memory re-allocations and complex index updates.
+### Data Source
 
-* **Proposed solution:**
-  * Apply Entity Separation by create a Many-to-Many  (link collection)
-  * Apply an Entity Separation by extract items from the embedded array into a new, independent primary collection called `CatalogItemLink` to connect `Catalog` and `CatalogItem`.
-  * Refactoring the API. Instead of writing one large document, it must create the `Catalog` document and separately create the associated links in `CatalogItemLink`.
+Metadata about a raw data file or database.
 
+| Field | Type | Description |
+|---|---|---|
+| `source_id` | string | Primary key |
+| `name` | string | Dataset name |
+| `format` | enum | `csv` · `json` · … |
+| `bucket_id` | string? | Storage bucket or path |
 
+---
 
+### Data Record
 
+A single aggregated row inside a data source.
 
+| Field | Type | Description |
+|---|---|---|
+| `record_id` | string | Primary key |
+| `source_id` | string | Parent data source |
+| `spatial_id` | string | `catalog_item_id` from a SPATIAL catalog |
+| `temporal_id` | datetime | UTC datetime this record represents |
+| `interest_ids` | string[] | `catalog_item_id` values from INTEREST catalogs |
+| `numerical_interest_ids` | dict | `{ "TASA_100K": 45.3 }` — numeric variables for `VO()` |
+| `raw_payload` | dict | Original source row (debug only) |
 
-### **2. Inefficient Links (Observatory Updates)**
+!!! warning "ID contract"
+    Every value in `spatial_id` and `interest_ids` must be a `catalog_item_id` that already
+    exists in the catalog. The DSL resolver looks them up at query time to resolve user-provided
+    values/codes/aliases.
 
-* **Problem:** When a Catalog contains thousands of items, the parent document becomes massively bloated. Any update to a single item requires rewriting and re-indexing the entire Catalog document, creating a write bottleneck.
-* **Proposed solution:**
-  * Remove embedded lists and manage the relationship using an `ObservatoryCatalogLink` collection (M:N); this link table will utilize a composite index of `(obid, cid)` to efficiently map to their Catalogs.
-  * Update GET operations so that retrieving an Observatory involves querying the `ObservatoryCatalogLink` collection to find its associated Catalogs, rather than loading embedded arrays.
+---
 
+### Task
 
+Tracks the status of a background or external operation.
 
+| Field | Type | Description |
+|---|---|---|
+| `task_id` | string | Primary key |
+| `user_id` | string | User who created the task |
+| `observatory_id` | string | Associated observatory |
+| `operation` | enum | `setup` · `index` · `create` · `sync` · … |
+| `current_status` | enum | `pending` · `running` · `success` · `failed` |
+| `attempts` | TaskAttempt[] | Full execution history |
 
+---
 
+## Link Collections
 
-### **3. Search Constraints (Product Querying)**
+| Collection | Relationship |
+|---|---|
+| `observatory_product_links` | Observatory → Product |
+| `observatory_catalog_links` | Observatory → Catalog (with `level`) |
+| `catalog_catalog_item_links` | Catalog → CatalogItem |
+| `product_catalogs_item_links` | Product → CatalogItem (tags) |
+| `catalog_item_relationships` | CatalogItem → child CatalogItem (hierarchy) |
+| `catalog_item_catalog_alias_links` | CatalogItem → CatalogItemAlias |
 
-* **Problem:** Embedding `Level` objects within the `Product` document complicates search. Finding products linked to a specific Catalog Item requires slow, complex queries that must traverse embedded arrays.
-* **Proposed solution:**
-  * Implement `ProductObservatoryLink` to directly link Products to Observatories and implement `ProductCatalogItemLink` to directly link Products to specific Catalog Items.
-  * Refactor the `create_products` endpoint to parse input levels and create the corresponding entries in `ProductCatalogItemLink`, removing the embedded `levels` array from the `Product` document.
-
-
-Some of this changes are going to be made by using a Data Migration Script. It will be developed to move existing data from `Catalog.items` into the decoupled `CatalogItems` collection, and also extract data from the embedded `Product.levels` fields and populate the new junction collections.
-
+`GraphLinkManager` owns all operations on these collections and enforces cascading deletions.

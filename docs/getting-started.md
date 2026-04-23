@@ -1,69 +1,135 @@
+# Getting Started
 
-This guide will help you set up the QLX API project from scratch, including deploying a MongoDB cluster and understanding the core architecture components of the QLX API.
+This guide walks you through running JUB API locally from scratch.
 
-## Step 1: MongoDB Cluster
+---
 
-The QLX API uses MongoDB as its primary database to store observatories, products, Xvars, assignments and catalogs relationships. To get started, you’ll need to deploy a MongoDB instance locally.
+## Prerequisites
 
-### Step 1.1: First steps
-:warning: It is important to first start one of the nodes with authorization disabled and without replication. You can perform this by modify the configuration file in ```db/configs/mongo1.conf``` in the security settings: 
+| Requirement | Version |
+|---|---|
+| Python | ≥ 3.10 |
+| Poetry | ≥ 1.6 |
+| Docker & Docker Compose | Any recent version |
+| MongoDB | Provided via Docker |
 
-```yml
-# Security settings
-security:
-  authorization: disabled
-  #keyFile: /data/key/mongokey
+---
 
-#replication:
-#  replSetName: rs0 
-```
+## Step 1 — Start the dependencies
 
-
-### Step 1.2 Deploy the containerized cluster
-Then you can deploy the local cluster using docker compose: 
+JUB API relies on **MongoDB** for persistence and **Xolo** for authentication.
+Both are started with a single command from the project root:
 
 ```bash
-docker compose -f db/dbcluster.yml up -d
-```
-
-### Step 1.3: Create a user
-
-To create a new user use the ```db/scripts/create_user.sh``` copy the content and connect to the node that has authorized disabled, and create the user, the default username is ```oca``` and password is ```d22a75e9e729debc```.
-
-if all the steps are completed successfully you will be able to connect to mongodb using your credentials, like this:
-
-```bash
-mongosh -u oca -p d22a75e9e729debc --authenticationDatabase admin
-```
-
-
-## Step 2: Install dependencies
-
-First you must install the package manager ```poetry```:
-
-```bash
-pip3 install poetry
-```
-
-Once the package manager is fully installed you must run the commands in order:
-
-```bash
-peotry shell 
-poetry install
-```
-
-## Step 3: Deploy server
-
-To deploy the server execute the ```run_local.sh``` bash script:
-
-```
+# Starts MongoDB (docker-compose.yml) + Xolo auth service (xolo.yml)
 ./run_local.sh
 ```
 
-Or you can run the ```uvicorn``` command:
+If you prefer to start them separately:
 
 ```bash
-uvicorn jubapi.server:app --host ${OCA_HOST-0.0.0.0} --port ${OCA_PORT-5000} --reload
+# MongoDB only
+docker compose -f docker-compose.yml up -d
+
+# Xolo auth service
+docker compose -f xolo.yml up -d
 ```
 
-The default port is ```5000```, you can change it directly on the command or update the environment variable ```OCA_PORT```. 
+MongoDB will be available at `mongodb://localhost:27027/`.
+
+---
+
+## Step 2 — Install Python dependencies
+
+```bash
+pip install poetry
+poetry self add poetry-plugin-shell   # enables ‘poetry shell’
+
+poetry install     # install all project dependencies
+poetry lock        # update the lock file if needed
+poetry shell       # activate the virtual environment
+```
+
+---
+
+## Step 3 — Configure environment
+
+The server loads its configuration from the file pointed to by `JUB_ENV_FILE_PATH`
+(defaults to `.env`).  Copy the provided template and fill in the values:
+
+```bash
+cp .env.example .env
+```
+
+Key variables:
+
+| Variable | Description | Default |
+|---|---|---|
+| `JUB_MONGODB_URI` | MongoDB connection string | `mongodb://localhost:27027/jub` |
+| `JUB_MONGODB_DATABASE_NAME` | Database name | `jub` |
+| `JUB_XOLO_API_URL` | Xolo auth service URL | `http://localhost:3000` |
+| `JUB_XOLO_SECRET` | Shared secret for Xolo | — |
+| `JUB_LOG_DEBUG` | Enable verbose logging (`1` / `0`) | `0` |
+| `JUB_ROOT_PATH` | FastAPI root path for reverse proxies | `""` |
+
+For tests a separate `.env.test` file is used, which points to `jub_test` database
+on port `27027`.
+
+---
+
+## Step 4 — Run the development server
+
+```bash
+./run_local.sh
+```
+
+Or directly with uvicorn:
+
+```bash
+uvicorn jubapi.server:app --host 0.0.0.0 --port 5000 --reload
+```
+
+The API will be available at `http://localhost:5000`.
+Interactive Swagger documentation is at `http://localhost:5000/docs`.
+
+---
+
+## Step 5 — Run tests
+
+```bash
+# All tests
+pytest tests/ -s -vvvv
+
+# Single test file
+pytest tests/test_search_service.py -s -vvvv
+
+# With coverage report
+coverage run -m pytest tests/ -s -vvvv && coverage report -m
+```
+
+!!! note
+    Tests require MongoDB running at `mongodb://localhost:27027/jub_test`.
+    The `./run_local.sh` script starts it automatically.
+
+---
+
+## Step 6 — Browse the docs locally
+
+```bash
+mkdocs serve
+```
+
+Documentation will be served at `http://localhost:8000`.
+
+---
+
+## First request
+
+Once the server is running, verify it is healthy:
+
+```bash
+curl http://localhost:5000/api/v2/observatories
+# → []
+```
+
+Then follow the [Use Cases guide](use-cases.md) to create your first observatory.
