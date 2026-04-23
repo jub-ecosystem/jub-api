@@ -48,9 +48,8 @@ async def services(test_db):
         observatory_catalog_link_repository        = link_manager.observatory_catalog_link_repository,
         catalog_catalog_item_link_repository       = link_manager.catalog_catalog_item_link_repository,
         observatory_repository                     = observatory_repository,
-        catalog_repository                         = catalog_repository
-
-
+        catalog_repository                         = catalog_repository,
+        data_records_repository                    = R.DataRecordsRepository(test_db[CollectionNames.DATA_RECORDS.value]),
     )
 
     # 3. Services

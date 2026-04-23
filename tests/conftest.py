@@ -50,33 +50,33 @@ async def before_all():
 @pytest.fixture(scope="function")
 async def test_db():
     """
-    Sets up a clean MongoDB test database before tests run,
-    and drops it completely after all tests in this module finish.
+    Sets up a clean MongoDB test database before each test.
+    All collections are dropped (awaited) so tests start with a blank slate.
     """
     client = MongoClient("mongodb://localhost:27027/")
     db = client.jub_test
-    
-    db.drop_collection(CollectionNames.DATA_SOURCES.value)
-    db.drop_collection(CollectionNames.DATA_RECORDS.value)
-    db.drop_collection(CollectionNames.USER_PROFILES.value)
-    db.drop_collection(CollectionNames.OBSERVATORIES.value)
-    db.drop_collection(CollectionNames.PRODUCTS.value)
-    db.drop_collection(CollectionNames.CATALOGS.value)
-    db.drop_collection(CollectionNames.CATALOG_ITEMS.value)
-    db.drop_collection(CollectionNames.CATALOG_ITEM_VALUES.value)
-    db.drop_collection(CollectionNames.CATALOG_ITEM_ALIASES.value)
-    db.drop_collection(CollectionNames.OBSERVATORY_PRODUCT_LINKS.value)
-    db.drop_collection(CollectionNames.PRODUCT_CATALOGS_ITEM_LINKS.value)
-    db.drop_collection(CollectionNames.CATALOG_ITEM_RELATIONSHIPS.value)
-    db.drop_collection(CollectionNames.CATALOG_CATALOG_ITEM_LINKS.value)
-    db.drop_collection(CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value)
-    db.drop_collection(CollectionNames.OBSERVATORY_CATALOG_LINKS.value)
-    # db
-    # Yield the db to the tests
+
+    collections_to_drop = [
+        CollectionNames.DATA_SOURCES.value,
+        CollectionNames.DATA_RECORDS.value,
+        CollectionNames.USER_PROFILES.value,
+        CollectionNames.OBSERVATORIES.value,
+        CollectionNames.PRODUCTS.value,
+        CollectionNames.CATALOGS.value,
+        CollectionNames.CATALOG_ITEMS.value,
+        CollectionNames.CATALOG_ITEM_VALUES.value,
+        CollectionNames.CATALOG_ITEM_ALIASES.value,
+        CollectionNames.OBSERVATORY_PRODUCT_LINKS.value,
+        CollectionNames.PRODUCT_CATALOGS_ITEM_LINKS.value,
+        CollectionNames.CATALOG_ITEM_RELATIONSHIPS.value,
+        CollectionNames.CATALOG_CATALOG_ITEM_LINKS.value,
+        CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value,
+        CollectionNames.OBSERVATORY_CATALOG_LINKS.value,
+    ]
+    for col in collections_to_drop:
+        await db.drop_collection(col)
+
     yield db
-    
-    # Teardown: Clean up after tests are done
-    client.drop_database('jub_test')
 
 
 

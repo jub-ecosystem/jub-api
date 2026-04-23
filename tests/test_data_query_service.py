@@ -59,9 +59,12 @@ async def seeded_db(test_db):
 @pytest.fixture
 def query_service(seeded_db):
     """Initializes the query service with the seeded repository."""
-    # Assuming DataRecordRepository takes the collection as an argument
-    repo = R.DataRecordRepository(seeded_db.data_records)
-    return S.DataQueryService(repo)
+    return S.DataQueryService(
+        record_repo               = R.DataRecordsRepository(seeded_db.data_records),
+        catalog_item_repo         = R.CatalogItemsRepository(seeded_db.catalog_items),
+        catalog_alias_repo        = R.CatalogItemAliasesRepository(seeded_db.catalog_item_aliases),
+        catalog_item_alias_link_repo = R.CatalogItemToCatalogAliasLinkRepository(seeded_db.catalog_item_catalog_alias_links),
+    )
 
 
 # ==========================================
@@ -89,11 +92,10 @@ async def test_query_single_spatial_filter(query_service:S.DataQueryService):
 async def test_query_complex_and_logic(query_service:S.DataQueryService):
     """Verifies that combining VS, VT, and multiple VI (AND logic) works."""
     source_id = "src_health_01"
+
     # Find females in Tamaulipas with Breast Cancer in 2025
-    dsl = "jub.v1.VS(TAM).VT(2025).VI(SEX.FEMALE AND CIE10.C50)"
-    
-    result = await query_service.query(source_id, dsl)
-    
+    dsl     = "jub.v1.VS(TAM).VT(2025).VI(SEX.FEMALE AND CIE10.C50)"
+    result  = await query_service.query(source_id, dsl)
     assert result.is_ok
     records = result.unwrap()
     
@@ -143,3 +145,89 @@ async def test_query_logical_error_returns_validation_err(query_service:S.DataQu
     assert isinstance(err, EX.ValidationError)
     # The error message from our updated ASTToMongoTranslator
     # assert "Logical AND is not allowed in Spatial"
+
+
+# ============================================================
+# RESOLUTION TESTS: catalog_item_id ≠ value (realistic case)
+#
+# The key invariant: DataRecord.spatial_id stores the
+# catalog_item_id, NOT the human-readable value/code.
+# The resolver must bridge whatever the user types to the
+# actual catalog_item_id before building the $match.
+# ============================================================
+
+@pytest.fixture
+async def resolved_db(test_db):
+    """
+    Catalog where catalog_item_id is intentionally different from value/code,
+    and data_records whose spatial_id equals the catalog_item_id (not the value).
+    """
+    dt = DT.datetime(2025, 1, 1, tzinfo=DT.timezone.utc)
+
+    await test_db.catalog_items.insert_many([
+        # catalog_item_id ("STATE_MX") is different from value ("MX") and code (9)
+        {"catalog_item_id": "STATE_MX",  "value": "MX",  "code": 9,  "name": "México",     "value_type": "STRING", "catalog_type": "SPATIAL"},
+        {"catalog_item_id": "STATE_TAM", "value": "TAM", "code": 28, "name": "Tamaulipas", "value_type": "STRING", "catalog_type": "SPATIAL"},
+        {"catalog_item_id": "INT_MALE",  "value": "SEX_MALE", "code": 1, "name": "Male",   "value_type": "STRING", "catalog_type": "INTEREST"},
+    ])
+    await test_db.catalog_item_aliases.insert_many([
+        {"catalog_item_alias_id": "ALIAS_MX", "value": "Mexico", "code": 0, "value_type": "STRING"},
+    ])
+    await test_db.catalog_item_catalog_alias_links.insert_many([
+        {"catalog_item_alias_id": "ALIAS_MX", "catalog_item_id": "STATE_MX"},
+    ])
+    # Records store the catalog_item_id in spatial_id — NOT the value
+    await test_db.data_records.insert_many([
+        {"record_id": "r1", "source_id": "src_1", "spatial_id": "STATE_MX",  "temporal_id": dt, "interest_ids": ["INT_MALE"], "numerical_interest_ids": {}, "raw_payload": {}},
+        {"record_id": "r2", "source_id": "src_1", "spatial_id": "STATE_MX",  "temporal_id": dt, "interest_ids": [],            "numerical_interest_ids": {}, "raw_payload": {}},
+        {"record_id": "r3", "source_id": "src_1", "spatial_id": "STATE_TAM", "temporal_id": dt, "interest_ids": [],            "numerical_interest_ids": {}, "raw_payload": {}},
+    ])
+    return test_db
+
+
+@pytest.fixture
+def resolved_query_service(resolved_db):
+    return S.DataQueryService(
+        record_repo              = R.DataRecordsRepository(resolved_db.data_records),
+        catalog_item_repo        = R.CatalogItemsRepository(resolved_db.catalog_items),
+        catalog_alias_repo       = R.CatalogItemAliasesRepository(resolved_db.catalog_item_aliases),
+        catalog_item_alias_link_repo = R.CatalogItemToCatalogAliasLinkRepository(resolved_db.catalog_item_catalog_alias_links),
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_spatial_by_value(resolved_query_service):
+    """VS(MX) — value must resolve to catalog_item_id 'STATE_MX'."""
+    result = await resolved_query_service.query("src_1", "jub.v1.VS(MX)")
+    assert result.is_ok, result.unwrap_err()
+    records = result.unwrap()
+    assert len(records) == 2, f"Expected 2 records, got {len(records)}: {[r.spatial_id for r in records]}"
+    assert all(r.spatial_id == "STATE_MX" for r in records)
+
+
+@pytest.mark.asyncio
+async def test_resolve_spatial_by_code(resolved_query_service):
+    """VS(28) — numeric code must resolve to catalog_item_id 'STATE_TAM'."""
+    result = await resolved_query_service.query("src_1", "jub.v1.VS(28)")
+    assert result.is_ok, result.unwrap_err()
+    records = result.unwrap()
+    assert len(records) == 1, f"Expected 1 record, got {len(records)}"
+    assert records[0].spatial_id == "STATE_TAM"
+
+
+@pytest.mark.asyncio
+async def test_resolve_spatial_by_catalog_item_id(resolved_query_service):
+    """VS(STATE_MX) — direct catalog_item_id must match 2 records."""
+    result = await resolved_query_service.query("src_1", "jub.v1.VS(STATE_MX)")
+    assert result.is_ok, result.unwrap_err()
+    assert len(result.unwrap()) == 2
+
+
+@pytest.mark.asyncio
+async def test_resolve_spatial_by_alias(resolved_query_service):
+    """VS(Mexico) — alias value must resolve to 'STATE_MX'."""
+    result = await resolved_query_service.query("src_1", "jub.v1.VS(Mexico)")
+    assert result.is_ok, result.unwrap_err()
+    records = result.unwrap()
+    assert len(records) == 2, f"Expected 2 records via alias, got {len(records)}"
+    assert all(r.spatial_id == "STATE_MX" for r in records)

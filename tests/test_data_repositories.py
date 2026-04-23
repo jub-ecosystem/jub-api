@@ -14,7 +14,7 @@ def source_repo(test_db):
 
 @pytest.fixture
 def record_repo(test_db):
-    return R.DataRecordRepository(test_db[CollectionNames.DATA_RECORDS.value])
+    return R.DataRecordsRepository(test_db[CollectionNames.DATA_RECORDS.value])
 
 @pytest.fixture
 def ingestion_service(source_repo, record_repo):
@@ -30,7 +30,7 @@ def make_utc_date(year, month=1, day=1):
 # ==========================================
 
 @pytest.mark.asyncio
-async def test_insert_many_records(record_repo: R.DataRecordRepository, test_db):
+async def test_insert_many_records(record_repo: R.DataRecordsRepository, test_db):
     """Verifies that insert_many actually writes multiple documents to Mongo."""
     records = [
         M.DataRecord(
@@ -55,7 +55,7 @@ async def test_insert_many_records(record_repo: R.DataRecordRepository, test_db)
     assert db_count == 2
 
 @pytest.mark.asyncio
-async def test_delete_by_source(record_repo: R.DataRecordRepository):
+async def test_delete_by_source(record_repo: R.DataRecordsRepository):
     """Verifies that records are wiped cleanly based on source_id."""
     await record_repo.insert_many([
         M.DataRecord(record_id="rec_1", source_id="src_target", spatial_id="MX", temporal_id=make_utc_date(2020), interest_ids=[], numerical_interest_ids={}),
