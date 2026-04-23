@@ -1,5 +1,4 @@
 
-from cmath import log
 import os
 from jubapi.repositories.v2.base import BaseRepository
 from motor.motor_asyncio import AsyncIOMotorCollection as Collection
@@ -511,7 +510,7 @@ class DataSourceRepository(BaseRepository[M.DataSource]):
     def __init__(self, collection:Collection):
         super().__init__(collection, M.DataSource, "source_id")
 
-class DataRecordRepository(BaseRepository[M.DataRecord]):
+class DataRecordsRepository(BaseRepository[M.DataRecord]):
     def __init__(self, collection:Collection):
         super().__init__(collection, M.DataRecord, "record_id")
 

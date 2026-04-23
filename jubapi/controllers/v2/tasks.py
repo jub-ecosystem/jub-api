@@ -1,12 +1,11 @@
 import os
 from typing import List, Dict
-from fastapi import Depends,APIRouter,status
+from fastapi import Depends, APIRouter, status
 import jubapi.services.v2 as S
 import jubapi.middlewares as MX
 import jubapi.models.v2 as M
 import jubapi.dto.v2 as DTO
 import commonx.dto.xolo as XoloDTO
-# from fastapi import APIRouter
 from jubapi.log.log import Log
 import jubapi.errors as EX
 
@@ -65,6 +64,40 @@ async def get_task_details(
         raise result.unwrap_err().to_http_exception()
         
     return result.unwrap()
+
+
+@router.post("/{task_id}/complete", response_model=DTO.TaskCompleteResponseDTO)
+async def complete_task(
+    task_id:  str,
+    payload:  DTO.TaskCompleteDTO,
+    task_srv: S.TasksService          = Depends(MX.get_tasks_service),
+    obs_svc:  S.ObservatoriesService  = Depends(MX.get_observatories_service),
+):
+    """
+    Called by external systems (indexers, provisioners) when their work is done.
+
+    - `success: true`  → marks task SUCCESS and **enables** the associated observatory.
+    - `success: false` → marks task FAILED; observatory stays disabled.
+
+    No user authentication required — this is a machine-to-machine endpoint.
+    """
+    task_result = await task_srv.complete_task(task_id, payload.success, payload.message)
+    if task_result.is_err:
+        raise task_result.unwrap_err().to_http_exception()
+
+    task             = task_result.unwrap()
+    obs_enabled      = False
+
+    if payload.success:
+        enable_result = await obs_svc.enable_observatory(task.observatory_id)
+        obs_enabled   = enable_result.is_ok
+
+    return DTO.TaskCompleteResponseDTO(
+        task_id             = task_id,
+        status              = task.current_status,
+        observatory_id      = task.observatory_id,
+        observatory_enabled = obs_enabled,
+    )
 
 
 @router.put("/{task_id}/retry", status_code=status.HTTP_204_NO_CONTENT)

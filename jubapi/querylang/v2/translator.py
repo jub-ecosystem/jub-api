@@ -1,5 +1,5 @@
-from jubapi.querylang.v2.parser import QueryAST, ConditionGroup,SPATIAL_VARIABLE, TEMPORAL_VARIABLE, INTEREST_VARIABLE, OBSERVABLE_VARIABLE
-from typing import Dict, Any
+from jubapi.querylang.v2.parser import QueryAST, ConditionGroup,SPATIAL_VARIABLE, TEMPORAL_VARIABLE, INTEREST_VARIABLE, OBSERVABLE_VARIABLE,GROUP_VARIABLE
+from typing import Dict, Any, List
 from jubapi.utils import Utils
 
 class ASTToMongoTranslator:
@@ -19,22 +19,141 @@ class ASTToMongoTranslator:
     }
 
     @classmethod
-    def translate(cls, ast: 'QueryAST') -> Dict[str, Any]:
-        mongo_query = {}
-        
+    def translate(cls, ast: 'QueryAST') -> List[Dict[str, Any]]:
+        """Now returns a List of dictionary stages (Aggregation Pipeline)"""
+        match_stage = {}
+        group_id = {}
+        metric_stage = {}
+
+        # 1. Route the AST nodes to their specific builders
         for query in ast.queries:
             prefix = query.catalog_prefix
             group = query.group
             
             if prefix == SPATIAL_VARIABLE:
-                mongo_query.update(cls._build_spatial(group))
+                match_stage.update(cls._build_spatial(group))
             elif prefix == TEMPORAL_VARIABLE:
-                mongo_query.update(cls._build_temporal(group))
+                match_stage.update(cls._build_temporal(group))
             elif prefix == INTEREST_VARIABLE:
-                mongo_query.update(cls._build_interest(group))
-                
-        return mongo_query
+                match_stage.update(cls._build_interest(group))
+            elif prefix == OBSERVABLE_VARIABLE:
+                metric_stage = cls._build_observable(group)
+            elif prefix == GROUP_VARIABLE:
+                group_id.update(cls._build_grouping(group))
 
+        # 2. Apply Defaults if VO or BY are missing
+        if not metric_stage:
+            # Default to counting records if no math is specified
+            metric_stage = {"metric_value": {"$sum": 1}} 
+        if not group_id:
+            # Global aggregate if no BY() is provided
+            group_id = None 
+
+        # 3. Construct the MongoDB Pipeline
+        pipeline = []
+        
+        # Stage 1: Filter the data
+        if match_stage:
+            pipeline.append({"$match": match_stage})
+            
+        # Stage 2: Group and calculate
+        group_stage = {"_id": group_id}
+        group_stage.update(metric_stage)
+        pipeline.append({"$group": group_stage})
+
+        # Stage 3: Sort the X-Axis for clean charts
+        if group_id is not None:
+            pipeline.append({"$sort": {"_id.x_axis": 1}})
+
+        return pipeline
+    # @classmethod
+    # def translate(cls, ast: 'QueryAST') -> Dict[str, Any]:
+    #     mongo_query = {}
+        
+    #     for query in ast.queries:
+    #         prefix = query.catalog_prefix
+    #         group = query.group
+            
+    #         if prefix == SPATIAL_VARIABLE:
+    #             mongo_query.update(cls._build_spatial(group))
+    #         elif prefix == TEMPORAL_VARIABLE:
+    #             mongo_query.update(cls._build_temporal(group))
+    #         elif prefix == INTEREST_VARIABLE:
+    #             mongo_query.update(cls._build_interest(group))
+                
+    #     return mongo_query
+    
+    @classmethod
+    def _build_observable(cls, group: 'ConditionGroup') -> dict:
+        """Handles VO(...) - Maps to $avg, $sum, $count"""
+        cond = group.conditions[0]
+        if cond.operator == "COUNT":
+            return {"metric_value": {"$sum": 1}}
+        elif cond.operator == "AVG":
+            # Cambiado para usar tu diccionario numerical_interest_ids
+            return {"metric_value": {"$avg": f"$numerical_interest_ids.{cond.catalog_value}"}}
+        elif cond.operator == "SUM":
+            # Cambiado para usar tu diccionario numerical_interest_ids
+            return {"metric_value": {"$sum": f"$numerical_interest_ids.{cond.catalog_value}"}}
+        return {}
+
+    @classmethod
+    def _build_grouping(cls, group: 'ConditionGroup') -> dict:
+        """Handles BY(...) - Maps to the _id of the $group stage"""
+        grouping = {}
+        
+        for i, cond in enumerate(group.conditions):
+            target = cond.catalog_value
+            
+            # 1. Variables Directas (No están en arreglos)
+            if target == "TEMPORAL": 
+                db_field = "$temporal_id"
+            elif target == "SPATIAL": 
+                db_field = "$spatial_id"
+                
+            # 2. Variables de Interés (Están dentro del arreglo interest_ids)
+            else: 
+                # Magia de MongoDB: "Filtra el arreglo interest_ids y dame 
+                # SOLO el primer elemento que empiece con 'TARGET_'"
+                # Ejemplo: Si target es "SEX", buscará "^SEX_" y extraerá "SEX_MALE"
+                db_field = {
+                    "$arrayElemAt": [
+                        {
+                            "$filter": {
+                                "input": "$interest_ids",
+                                "as": "item",
+                                "cond": {
+                                    "$regexMatch": {
+                                        "input": "$$item",
+                                        "regex": f"^{target}_"
+                                    }
+                                }
+                            }
+                        },
+                        0 # Tomamos el primer match (índice 0)
+                    ]
+                }
+            
+            key = "x_axis" if i == 0 else "hue"
+            grouping[key] = db_field
+            
+        return grouping
+    # @classmethod
+    # def _build_grouping(cls, group: 'ConditionGroup') -> dict:
+    #     """Handles BY(...) - Maps to the _id of the $group stage"""
+    #     grouping = {}
+    #     # We assume the first condition is the X-Axis, the second is the Hue
+    #     for i, cond in enumerate(group.conditions):
+    #         target = cond.catalog_value
+    #         # Map standard variables to DB fields
+    #         if target == "TEMPORAL": db_field = "$temporal_id"
+    #         elif target == "SPATIAL": db_field = "$spatial_id"
+    #         else: db_field = "$interest_ids" # E.g., SEX or CIE10
+            
+    #         key = "x_axis" if i == 0 else "hue"
+    #         grouping[key] = db_field
+            
+    #     return grouping
     @classmethod
     def _format_id(cls, catalog_value: str, item_path: list) -> str:
         """

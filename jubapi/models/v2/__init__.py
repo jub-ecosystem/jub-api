@@ -35,6 +35,7 @@ class ObservatoryX(Descriptable):
   observatory_id: str
   title: str
   image_url: Optional[str] = None
+  is_disabled: bool = Field(default=False)
   @staticmethod
   def from_doc(doc: Dict) -> 'ObservatoryX':
     return ObservatoryX(
@@ -42,6 +43,7 @@ class ObservatoryX(Descriptable):
         title          = doc['title'],
         description    = doc.get('description', ''),
         metadata       = doc.get('metadata', {}),
+        is_disabled    = doc.get('is_disabled', False),
         created_at     = doc.get('created_at', DT.datetime.now(DT.timezone.utc)),
         updated_at     = doc.get('updated_at', DT.datetime.now(DT.timezone.utc))
     )
@@ -90,7 +92,6 @@ class CatalogItemX(Descriptable):
         updated_at      = doc.get('updated_at', DT.datetime.now(DT.timezone.utc))
     )
 
-
 class CatalogItemAlias(Descriptable):
     catalog_item_alias_id: str
     value: str
@@ -111,11 +112,22 @@ class CatalogItemAlias(Descriptable):
         )
 
 
-    
+
+class Service(Descriptable):
+    pass
+
+class ProductServiceLink(TimestampedModel):
+    product_id: str
+    service_id: str
+
+class CatalogServiceLink(TimestampedModel):
+    catalog_id: str
+    service_id: str
+
 # Links
 class ObservatoryToCatalogLink(TimestampedModel):
-  observatory_id: str
-  catalog_id: str 
+  observatory_id:str
+  catalog_id:str 
   level:int=0
 
 class CatalogToCatalogItemLink(TimestampedModel):
@@ -248,7 +260,8 @@ class UserProfileX(TimestampedModel):
 class DataSource(BaseModel):
     source_id: str = Field(..., description="Unique ID for the data source.")
     name: str = Field(..., description="Name of the dataset or database.")
-    format: ENUMS.DataSourceFormatEnum = Field(..., description="Format or database engine.")
+    description: Optional[str] = Field(default="", description="Human-readable description of this data source.")
+    format: ENUMS.DataSourceFormatEnum = Field(default=ENUMS.DataSourceFormatEnum.CSV, description="Format or database engine.")
     connection_uri: Optional[str] = Field(default=None, description="Connection string for databases.")
     bucket_id: Optional[str] = Field(default="jub", description="Path or URL if the source is a static file.")
     ball_id: Optional[str] = Field(default="", description="ID of the BALL this source belongs to, if any.")

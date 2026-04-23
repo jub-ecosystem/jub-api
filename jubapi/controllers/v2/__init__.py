@@ -1,7 +1,10 @@
 from jubapi.controllers.v2.observatories import router as observatories
 from jubapi.controllers.v2.search import router as search
 from jubapi.controllers.v2.catalogs import router as catalogs
+from jubapi.controllers.v2.catalogs_items import router as catalog_items
 from jubapi.controllers.v2.jub import router as jub
 from jubapi.controllers.v2.users import router as users
 from jubapi.controllers.v2.notifications import router as notifications
 from jubapi.controllers.v2.tasks import router as tasks
+from jubapi.controllers.v2.datasources import router as datasources
+from jubapi.controllers.v2.products import router as products

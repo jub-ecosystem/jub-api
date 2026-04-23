@@ -75,7 +75,7 @@ class ForbiddenError(JubError):
         super().__init__(403, detail, headers)
 class UnknownError(JubError):
     """Represents an unknown or internal server error (HTTP 500)."""
-    def __init__(self,detail: Any = None, headers: Dict[str, str]  = None) -> None:
+    def __init__(self,detail: Any = None, headers: Dict[str, str]  = None,status_code: int = 500) -> None:
         """
         Initializes the UnknownError.
 
@@ -83,7 +83,7 @@ class UnknownError(JubError):
             detail (Any, optional): The error message or details. Defaults to None.
             headers (Dict[str, str], optional): Additional HTTP headers. Defaults to None.
         """
-        super().__init__(500, detail, headers)
+        super().__init__(status_code, detail, headers)
 
 class NotFound(JubError):
     """Represents a resource not found error (HTTP 404)."""

@@ -6,6 +6,7 @@ import jubapi.services.v2 as S
 import jubapi.repositories.v2 as R
 import jubapi.db.constants as DC
 from jubapi.db import get_collection
+from jubapi.storage import StorageBackend, LocalStorageBackend
 from xolo.client.client import XoloClient
 import jubapi.dto.v2 as DTO
 from jubapi.log import Log
@@ -59,7 +60,8 @@ def get_search_service()->S.SearchService:
         observatory_catalog_link_repository= R.ObservatoryToCatalogLinkRepository(get_collection(DC.CollectionNames.OBSERVATORY_CATALOG_LINKS.value)),
         catalog_catalog_item_link_repository= R.CatalogToCatalogItemLinkRepository(get_collection(DC.CollectionNames.CATALOG_CATALOG_ITEM_LINKS.value)),
         observatory_repository = R.ObservatoriesRepository(get_collection(DC.CollectionNames.OBSERVATORIES.value)),
-        catalog_repository = R.CatalogsRepository(get_collection(DC.CollectionNames.CATALOGS.value))
+        catalog_repository = R.CatalogsRepository(get_collection(DC.CollectionNames.CATALOGS.value)),
+        data_records_repository= R.DataRecordsRepository(get_collection(DC.CollectionNames.DATA_RECORDS.value))
 
     )
     return service
@@ -206,3 +208,26 @@ def get_tasks_service(
         notification_service=notification_service
     )
     return service
+
+
+def get_data_ingestion_service() -> S.DataIngestionService:
+    return S.DataIngestionService(
+        source_repo = R.DataSourceRepository(get_collection(DC.CollectionNames.DATA_SOURCES.value)),
+        record_repo = R.DataRecordsRepository(get_collection(DC.CollectionNames.DATA_RECORDS.value)),
+    )
+
+
+def get_data_query_service() -> S.DataQueryService:
+    return S.DataQueryService(
+        record_repo               = R.DataRecordsRepository(get_collection(DC.CollectionNames.DATA_RECORDS.value)),
+        catalog_item_repo         = R.CatalogItemsRepository(get_collection(DC.CollectionNames.CATALOG_ITEMS.value)),
+        catalog_alias_repo        = R.CatalogItemAliasesRepository(get_collection(DC.CollectionNames.CATALOG_ITEM_ALIASES.value)),
+        catalog_item_alias_link_repo = R.CatalogItemToCatalogAliasLinkRepository(get_collection(DC.CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value)),
+    )
+
+
+# Storage backend — swap LocalStorageBackend for a cloud implementation in production
+_storage_backend: StorageBackend = LocalStorageBackend()
+
+def get_storage_backend() -> StorageBackend:
+    return _storage_backend

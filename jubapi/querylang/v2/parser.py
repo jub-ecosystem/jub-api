@@ -4,10 +4,14 @@ from pydantic import BaseModel
 from enum import Enum
 
 # --- AST Models ---
+PREFIX = "jub.v1."
 SPATIAL_VARIABLE    = "VS"
 TEMPORAL_VARIABLE   = "VT"
 INTEREST_VARIABLE   = "VI"
 OBSERVABLE_VARIABLE = "VO"
+GROUP_VARIABLE      = "BY"
+
+
 
 class ConditionOperators(str, Enum):
     GREATER_THAN = ">"
@@ -18,6 +22,10 @@ class ConditionOperators(str, Enum):
     EQUAL = "="
     WILDCARD = "WILDCARD"
     EXACT = "EXACT"
+    # Math operations
+    AVG   = "AVG"
+    SUM   = "SUM"
+    COUNT = "COUNT"
     
 class Condition(BaseModel):
     operator: str
@@ -68,30 +76,30 @@ class QueryAST(BaseModel):
         """Helper to parse an individual condition string."""
         cond_str = cond_str.strip()
         
-        # Set default catalog names for standard variables
-        if prefix == SPATIAL_VARIABLE:
-            default_catalog = "SPATIAL"
-        elif prefix == TEMPORAL_VARIABLE:
-            default_catalog = "TEMPORAL"
-        elif prefix == INTEREST_VARIABLE:
-            default_catalog = "INTEREST"
-        elif prefix == OBSERVABLE_VARIABLE:
-            default_catalog = "OBSERVABLE"
-        else: 
-            default_catalog = None
+        if prefix == OBSERVABLE_VARIABLE:
+            math_func_match = re.match(r'^(AVG|SUM|COUNT)(?:\(([^)]+)\))?$', cond_str)
+            if math_func_match:
+                op = math_func_match.group(1)
+                target = math_func_match.group(2).strip() if math_func_match.group(2) else "ALL"
+                return Condition(operator=op, catalog_value=target, item_path=[])
+            else:
+                raise ValueError(f"Invalid math function in VO: '{cond_str}'. Expected AVG(X), SUM(X), or COUNT.")   
+        if prefix == GROUP_VARIABLE:
+            # For GROUP BY, we treat the entire string as a catalog value with an EXACT match
+            return Condition(operator="EXACT", catalog_value=cond_str, item_path=[])
 
-        # 1. Check for Full Expressions (e.g., "AGE >= 20" or "CIE10 == 50")
+        # Set default catalog names for standard variables
+        
+        default_catalog = {SPATIAL_VARIABLE: "SPATIAL", TEMPORAL_VARIABLE: "TEMPORAL", INTEREST_VARIABLE: "INTEREST"}.get(prefix)
+
+        # 1. Check for Full Expressions (e.g., "AGE > 20" inside VI)    
         full_expr_match = re.match(r'^([A-Za-z0-9_]+)\s*(>=|<=|>|<|!=|==|=)\s*(.*)$', cond_str)
         if full_expr_match:
             parsed_catalog = full_expr_match.group(1).strip()
-            operator = full_expr_match.group(2)
-            raw_val = full_expr_match.group(3).strip()
-            
-            # Normalize double equals to single equals
-            if operator == "==":
-                operator = "="
-                
-            formmated_val = QueryAST._standardize_date(raw_val) if prefix == TEMPORAL_VARIABLE else raw_val
+            group2         = full_expr_match.group(2)
+            operator       = "=" if group2                                 == "==" else group2                # Normalize "==" to "="
+            raw_val        = full_expr_match.group(3).strip()
+            formmated_val  = QueryAST._standardize_date(raw_val) if prefix == TEMPORAL_VARIABLE else raw_val
             
             return Condition(
                 operator=operator,
@@ -102,18 +110,17 @@ class QueryAST(BaseModel):
         # 2. Check for Prefix Math Operators (e.g., "> 2000" inside VT)
         math_match = re.match(r'^(>=|<=|>|<|!=|==|=)\s*(.*)$', cond_str)
         if math_match:
-            operator = math_match.group(1)
-            raw_val = math_match.group(2).strip()
-            
-            if operator == "==":
-                operator = "="
+            group1   = math_match.group(1)
+            operator = "=" if group1 == "==" else group1  # Normalize "==" to "="
+            raw_val  = math_match.group(2).strip()
+
                 
             formmated_val = QueryAST._standardize_date(raw_val) if prefix == TEMPORAL_VARIABLE else raw_val
             
             return Condition(
-                operator=operator,
-                catalog_value=default_catalog,
-                item_path=[formmated_val]
+                operator      = operator,
+                catalog_value = default_catalog,
+                item_path     = [formmated_val]
             )
             
         # 3. Check for Hierarchy Wildcards (e.g., "MX.*" or "*")
@@ -145,13 +152,14 @@ class QueryAST(BaseModel):
         """
         Parses a complex Jub query string into an AST with AND/OR logic.
         """
-        if not query_str.startswith("jub.v1."):
-            raise ValueError("Invalid query format. Must start with 'jub.v1.'")
+        if not query_str.startswith(PREFIX):
+            raise ValueError(f"Invalid query format. Must start with '{PREFIX}'")
         
-        core_query = query_str[7:]
+        core_query = query_str[len(PREFIX):]
         
         # Match patterns like VS(...) or VT(...)
-        pattern = r'([A-Z]{2})\(([^)]+)\)'
+        # pattern = r'([A-Z]{2})\(([^)]+)\)'
+        pattern = r'([A-Z]{2})\((.*?)\)(?=\.[A-Z]{2}\(|$)'
         matches = re.findall(pattern, core_query)
         
         parsed_queries = []

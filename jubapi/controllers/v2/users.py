@@ -1,4 +1,4 @@
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 import jubapi.services.v2 as S
 import jubapi.middlewares as MX
 import jubapi.models.v2 as M
@@ -66,24 +66,19 @@ async def get_user_settings(
     user: DTO.UserProfileDTO = Depends(MX.get_current_user),
     service: S.UsersProfileXService = Depends(MX.get_user_profile_service)
 ):
-    try:
-        if user_id != user.user_id:
-            L.warning(f"User {user.user_id} attempted to access settings for user {user_id}")
-            raise EX.ForbiddenError(detail="You can only access your own settings").to_http_exception()
-        
-        result = await service.get_user_preferences(user_id)
-        if result.is_err:
-            e = result.unwrap_err()
-            L.error({
-                "msg": f"Error retrieving user preferences for user {user_id}: {e.detail}",
-            })
-            raise e.to_http_exception()
-            # raise EX.JubError(detail="Failed to retrieve user preferences").to_http_exception()
-        
-        return result.unwrap()
-    except Exception as e:
-        L.error(f"Unexpected error retrieving user preferences for user {user_id}: {str(e)}")
-        raise EX.UnknownError(detail="Unexpected error retrieving user preferences").to_http_exception()
+    if user_id != user.user_id:
+        L.warning(f"User {user.user_id} attempted to access settings for user {user_id}")
+        raise EX.ForbiddenError(detail="You can only access your own settings").to_http_exception()
+
+    result = await service.get_user_preferences(user_id)
+    if result.is_err:
+        e = result.unwrap_err()
+        L.error({"msg": f"Error retrieving user preferences for user {user_id}: {e.detail}"})
+        raise e.to_http_exception()
+
+    return result.unwrap()
+
+
 @router.put("/{user_id}/settings")
 async def update_user_settings(
     user_id: str,
@@ -91,26 +86,15 @@ async def update_user_settings(
     user: DTO.UserProfileDTO = Depends(MX.get_current_user),
     service: S.UsersProfileXService = Depends(MX.get_user_profile_service),
 ):
-    try:
-        if user_id != user.user_id:
-            L.warning(f"User {user.user_id} attempted to update settings for user {user_id}")
-            raise EX.ForbiddenError(detail="You can only update your own settings").to_http_exception()
-        
-        result = await service.update_user_preferences(user_id, dto)
-        if result.is_err:
-            e = result.unwrap_err()
-            L.error({
-                "msg": f"Error updating user preferences for user {user_id}: {e.detail}",
-            })
-            raise e.to_http_exception()
-            # raise EX.JubError(detail="Failed to update user preferences").to_http_exception()
-        L.info({
-            "msg": f"Successfully updated user preferences for user {user_id}",
-            "user_id": user_id,
-            "preferences": dto.model_dump()
+    if user_id != user.user_id:
+        L.warning(f"User {user.user_id} attempted to update settings for user {user_id}")
+        raise EX.ForbiddenError(detail="You can only update your own settings").to_http_exception()
 
-        })
-        return result.unwrap()
-    except Exception as e:
-        L.error(f"Unexpected error updating user preferences for user {user_id}: {str(e)}")
-        raise EX.UnknownError(detail="Unexpected error updating user preferences").to_http_exception()
+    result = await service.update_user_preferences(user_id, dto)
+    if result.is_err:
+        e = result.unwrap_err()
+        L.error({"msg": f"Error updating user preferences for user {user_id}: {e.detail}"})
+        raise e.to_http_exception()
+
+    L.info({"msg": f"Successfully updated user preferences for user {user_id}", "user_id": user_id})
+    return result.unwrap()

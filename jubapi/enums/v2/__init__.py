@@ -12,6 +12,8 @@ class TaskOperationEnum(str, Enum):
     UPDATE = "update"
     DELETE = "delete"
     SYNC   = "sync"
+    SETUP  = "setup"   # observatory provisioning
+    INDEX  = "index"   # file ingestion / data indexing
     
 
 class NotificationStatusEnum(str, Enum):
