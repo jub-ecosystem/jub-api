@@ -662,7 +662,7 @@ class ObservatorySetupResponseDTO(BaseModel):
 class BulkCatalogsDTO(BaseModel):
     """Assign N fully-nested catalogs (items + aliases + hierarchy) to an observatory."""
     catalogs: List[CatalogCreateDTO]
-    level: int = Field(default=0, ge=0, description="Link level applied to every catalog in this batch.")
+    # level: int = Field(default=0, ge=0, description="Link level applied to every catalog in this batch.")
 
 
 class BulkCatalogsResponseDTO(BaseModel):
@@ -721,3 +721,311 @@ class TaskCompleteResponseDTO(BaseModel):
     status: str
     observatory_id: str
     observatory_enabled: bool
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SERVICE / WORKFLOW DOMAIN DTOs
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── BuildingBlock ─────────────────────────────────────────────────────────────
+
+class BuildingBlockCreateDTO(BaseModel):
+    name: str    = Field(..., description="Human-readable identifier for this building block.")
+    command: str = Field(..., description="Entrypoint command executed inside the container.")
+    image: str   = Field(..., description="Docker image reference (e.g. 'python:3.11-slim').")
+    description: Optional[str] = Field(default="")
+
+
+class BuildingBlockUpdateDTO(BaseModel):
+    name: Optional[str]        = None
+    command: Optional[str]     = None
+    image: Optional[str]       = None
+    description: Optional[str] = None
+
+
+class BuildingBlockDTO(BaseModel):
+    building_block_id: str
+    name: str
+    command: str
+    image: str
+    description: str
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.BuildingBlock') -> 'BuildingBlockDTO':
+        return BuildingBlockDTO(
+            building_block_id = m.building_block_id,
+            name              = m.name,
+            command           = m.command,
+            image             = m.image,
+            description       = m.description or "",
+            created_at        = m.created_at.isoformat(),
+            updated_at        = m.updated_at.isoformat(),
+        )
+
+
+# ── Pattern ───────────────────────────────────────────────────────────────────
+
+class PatternCreateDTO(BaseModel):
+    name: str  = Field(..., description="Human-readable pattern name.")
+    task: str  = Field(..., description="Task category (e.g. 'transform', 'ingest').")
+    pattern: str = Field(..., description="Pattern type (e.g. 'map-reduce', 'pipeline').")
+    description: Optional[str] = Field(default="")
+    workers: int               = Field(default=1, ge=1)
+    loadbalancer: str          = Field(default="round-robin")
+    building_block_id: Optional[str] = Field(default=None, description="ID of an existing BuildingBlock.")
+
+
+class PatternUpdateDTO(BaseModel):
+    name: Optional[str]             = None
+    task: Optional[str]             = None
+    pattern: Optional[str]          = None
+    description: Optional[str]      = None
+    workers: Optional[int]          = Field(default=None, ge=1)
+    loadbalancer: Optional[str]     = None
+    building_block_id: Optional[str]= None
+
+
+class PatternDTO(BaseModel):
+    pattern_id: str
+    name: str
+    task: str
+    pattern: str
+    description: str
+    workers: int
+    loadbalancer: str
+    building_block_id: Optional[str]
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.PatternX') -> 'PatternDTO':
+        return PatternDTO(
+            pattern_id        = m.pattern_id,
+            name              = m.name,
+            task              = m.task,
+            pattern           = m.pattern,
+            description       = m.description or "",
+            workers           = m.workers,
+            loadbalancer      = m.loadbalancer,
+            building_block_id = m.building_block_id,
+            created_at        = m.created_at.isoformat(),
+            updated_at        = m.updated_at.isoformat(),
+        )
+
+
+# ── Stage ─────────────────────────────────────────────────────────────────────
+
+class StageCreateDTO(BaseModel):
+    name: str     = Field(..., description="Stage name.")
+    source: str   = Field(..., description="Input source identifier or URI.")
+    sink: str     = Field(..., description="Output sink identifier or URI.")
+    endpoint: str = Field(..., description="HTTP or messaging endpoint exposed by this stage.")
+    transformation_id: Optional[str] = Field(default=None, description="ID of an existing PatternX.")
+
+
+class StageUpdateDTO(BaseModel):
+    name: Optional[str]             = None
+    source: Optional[str]           = None
+    sink: Optional[str]             = None
+    endpoint: Optional[str]         = None
+    transformation_id: Optional[str]= None
+
+
+class StageDTO(BaseModel):
+    stage_id: str
+    name: str
+    source: str
+    sink: str
+    endpoint: str
+    transformation_id: Optional[str]
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.StageX') -> 'StageDTO':
+        return StageDTO(
+            stage_id          = m.stage_id,
+            name              = m.name,
+            source            = m.source,
+            sink              = m.sink,
+            endpoint          = m.endpoint,
+            transformation_id = m.transformation_id,
+            created_at        = m.created_at.isoformat(),
+            updated_at        = m.updated_at.isoformat(),
+        )
+
+
+# ── Workflow ──────────────────────────────────────────────────────────────────
+
+class WorkflowCreateDTO(BaseModel):
+    name: str
+    stage_ids: List[str] = Field(default_factory=list, description="Ordered stage IDs.")
+
+
+class WorkflowUpdateDTO(BaseModel):
+    name: Optional[str]       = None
+    stage_ids: Optional[List[str]] = None
+
+
+class WorkflowDTO(BaseModel):
+    workflow_id: str
+    name: str
+    stage_ids: List[str]
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.WorkflowX') -> 'WorkflowDTO':
+        return WorkflowDTO(
+            workflow_id = m.workflow_id,
+            name        = m.name,
+            stage_ids   = m.stage_ids,
+            created_at  = m.created_at.isoformat(),
+            updated_at  = m.updated_at.isoformat(),
+        )
+
+
+# ── Service ───────────────────────────────────────────────────────────────────
+
+class ServiceCreateDTO(BaseModel):
+    name: str        = Field(..., description="Service name — searchable via DSL.")
+    owner_id: str    = Field(..., description="User ID of the service owner.")
+    description: Optional[str] = Field(default="")
+    public: bool               = Field(default=False, description="Publicly discoverable via SVC(*) queries.")
+    workflow_id: Optional[str] = Field(default=None, description="Reference to an existing workflow.")
+
+
+class ServiceUpdateDTO(BaseModel):
+    name: Optional[str]        = None
+    description: Optional[str] = None
+    public: Optional[bool]     = None
+    workflow_id: Optional[str] = None
+
+
+class ServiceDTO(BaseModel):
+    service_id: str
+    name: str
+    description: str
+    owner_id: str
+    public: bool
+    workflow_id: Optional[str]
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.ServiceX') -> 'ServiceDTO':
+        return ServiceDTO(
+            service_id  = m.service_id,
+            name        = m.name,
+            description = m.description or "",
+            owner_id    = m.owner_id,
+            public      = m.public,
+            workflow_id = m.workflow_id,
+            created_at  = m.created_at.isoformat(),
+            updated_at  = m.updated_at.isoformat(),
+        )
+
+
+# ── Bulk / Index ──────────────────────────────────────────────────────────────
+
+class BuildingBlockInlineDTO(BaseModel):
+    """Inline building block definition for the index endpoint."""
+    name: str
+    command: str
+    image: str
+    description: Optional[str] = ""
+
+
+class PatternInlineDTO(BaseModel):
+    """Inline pattern definition for the index endpoint."""
+    name: str
+    task: str
+    pattern: str
+    description: Optional[str] = ""
+    workers: int               = 1
+    loadbalancer: str          = "round-robin"
+    building_block: Optional[BuildingBlockInlineDTO] = Field(
+        default=None, description="Create a new building block inline."
+    )
+    building_block_id: Optional[str] = Field(
+        default=None, description="Reference an existing building block by ID."
+    )
+
+
+class StageInlineDTO(BaseModel):
+    """Inline stage definition for the index endpoint."""
+    name: str
+    source: str
+    sink: str
+    endpoint: str
+    transformation: Optional[PatternInlineDTO] = Field(
+        default=None, description="Create a new pattern inline."
+    )
+    transformation_id: Optional[str] = Field(
+        default=None, description="Reference an existing pattern by ID."
+    )
+
+
+class WorkflowInlineDTO(BaseModel):
+    """Inline workflow definition for the index endpoint."""
+    name: str
+    stages: List[StageInlineDTO] = Field(..., min_length=1)
+
+
+class ServiceIndexDTO(BaseModel):
+    """
+    One-shot request that creates the complete Service → Workflow → Stages →
+    Patterns → BuildingBlocks tree in a single call.
+
+    Either provide inline definitions or reference existing IDs — both are
+    supported at every level.
+    """
+    name: str        = Field(..., description="Service name.")
+    owner_id: str    = Field(..., description="User ID of the service owner.")
+    description: Optional[str] = Field(default="")
+    public: bool               = Field(default=False)
+    workflow: Optional[WorkflowInlineDTO] = Field(
+        default=None, description="Create a new workflow inline."
+    )
+    workflow_id: Optional[str] = Field(
+        default=None, description="Reference an existing workflow by ID."
+    )
+
+
+class ServiceIndexResponseDTO(BaseModel):
+    """Summary of every entity created or referenced during a bulk index."""
+    service_id: str
+    workflow_id: Optional[str]          = None
+    stage_ids: List[str]                = Field(default_factory=list)
+    pattern_ids: List[str]              = Field(default_factory=list)
+    building_block_ids: List[str]       = Field(default_factory=list)
+
+
+# ── Search ────────────────────────────────────────────────────────────────────
+
+class ServiceQueryDTO(BaseModel):
+    """Request body for the Services DSL search endpoint."""
+    query: str = Field(
+        ...,
+        description=(
+            "Services DSL query. Examples: "
+            "`jub.v1.SVC(*)` — all services; "
+            "`jub.v1.SVC(name=cancer)` — name contains 'cancer'; "
+            "`jub.v1.SVC(public=true)` — public only; "
+            "`jub.v1.SVC(owner=usr_abc)` — by owner. "
+            "Combine: `jub.v1.SVC(name=cancer,public=true)`."
+        ),
+    )
+    limit: int = Field(default=100, ge=1, le=1000)
+    skip: int  = Field(default=0, ge=0)
+
+
+class ServiceDeleteResponseDTO(BaseModel):
+    deleted: bool
+    service_id: str
+    cascade: dict = Field(
+        default_factory=dict,
+        description="Counts of cascade-deleted entities: {'workflow': 1, 'stages': N}.",
+    )

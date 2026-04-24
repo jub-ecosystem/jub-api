@@ -27,3 +27,10 @@ class CollectionNames(Enum):
     CATALOG_ITEMS_V1                = "catalog_items_v1"
     CATALOG_ITEM_VALUES_V1          = "catalog_item_values_v1"
 
+    # ── Service / Workflow domain ──────────────────────────────────────────
+    BUILDING_BLOCKS                 = "building_blocks"
+    PATTERNS                        = "patterns"
+    STAGES                          = "stages"
+    WORKFLOWS                       = "workflows"
+    SERVICES                        = "services"
+

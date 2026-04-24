@@ -40,12 +40,12 @@ Copyright &copy; 2026 Jub API Team
 
 nav = [
     { "Home" = "index.md" },
+    { "Getting Started" = "getting-started.md" },
     {"Data Model" = "data-model.md" },
     {"Conceptual Model" = "conceptual-model.md" },
     {"Architecture" = "architecture.md" },
-    { "Getting Started" = "getting-started.md" },
     { "API Reference" = "api-reference.md" },
-    { "Examples" = "examples.md" },
+    { "Use Cases" = "use-cases.md" },
 ]
 
 # Zensical supports both implicit navigation and explicitly defined navigation.

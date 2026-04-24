@@ -113,9 +113,6 @@ class CatalogItemAlias(Descriptable):
 
 
 
-class Service(Descriptable):
-    pass
-
 class ProductServiceLink(TimestampedModel):
     product_id: str
     service_id: str
@@ -381,3 +378,65 @@ class TaskX(BaseModel):
     
     created_at: datetime.datetime = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
     updated_at: datetime.datetime = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SERVICE / WORKFLOW DOMAIN
+# These models are independent of the observatory/catalog domain.
+# ══════════════════════════════════════════════════════════════════════════════
+
+class BuildingBlock(TimestampedModel):
+    """The smallest execution unit — a container image + entrypoint command."""
+    building_block_id: str = Field(..., description="Primary key (nanoid).")
+    name: str              = Field(..., description="Human-readable identifier.")
+    command: str           = Field(..., description="Entrypoint command executed inside the container.")
+    image: str             = Field(..., description="Docker image reference (e.g. 'python:3.11-slim').")
+    description: Optional[str] = Field(default="", description="Optional longer description.")
+
+
+class PatternX(TimestampedModel):
+    """
+    A reusable processing pattern that declares how a building block is deployed:
+    how many workers, what load-balancer strategy, and which task type it handles.
+    """
+    pattern_id: str             = Field(..., description="Primary key (nanoid).")
+    name: str                   = Field(..., description="Human-readable pattern name.")
+    description: Optional[str]  = Field(default="")
+    task: str                   = Field(..., description="Task category this pattern handles (e.g. 'transform', 'ingest').")
+    pattern: str                = Field(..., description="Pattern type (e.g. 'map-reduce', 'pipeline', 'fanout').")
+    workers: int                = Field(default=1, ge=1, description="Number of parallel worker replicas.")
+    loadbalancer: str           = Field(default="round-robin", description="Load-balancer strategy (e.g. 'round-robin', 'least-connections').")
+    building_block_id: Optional[str] = Field(default=None, description="Reference to BuildingBlock that implements this pattern.")
+
+
+class StageX(TimestampedModel):
+    """
+    One step in a workflow.  Declares where data comes from (source), where it goes
+    (sink), how it is transformed (transformation), and which HTTP endpoint it exposes.
+    """
+    stage_id: str               = Field(..., description="Primary key (nanoid).")
+    name: str                   = Field(..., description="Human-readable stage name.")
+    source: str                 = Field(..., description="Input source identifier or URI.")
+    sink: str                   = Field(..., description="Output sink identifier or URI.")
+    transformation_id: Optional[str] = Field(default=None, description="Reference to PatternX applied in this stage.")
+    endpoint: str               = Field(..., description="HTTP or messaging endpoint exposed by this stage.")
+
+
+class WorkflowX(TimestampedModel):
+    """An ordered sequence of stages forming a complete processing pipeline."""
+    workflow_id: str       = Field(..., description="Primary key (nanoid).")
+    name: str              = Field(..., description="Human-readable workflow name.")
+    stage_ids: List[str]   = Field(default_factory=list, description="Ordered list of StageX IDs.")
+
+
+class ServiceX(TimestampedModel):
+    """
+    Top-level entity that groups a workflow under a named, ownable service.
+    The `public` flag controls discoverability via the Services DSL.
+    """
+    service_id: str            = Field(..., description="Primary key (nanoid).")
+    name: str                  = Field(..., description="Service name — searchable via DSL.")
+    description: Optional[str] = Field(default="", description="What this service does.")
+    owner_id: str              = Field(..., description="User ID of the service owner.")
+    public: bool               = Field(default=False, description="Whether the service is publicly discoverable.")
+    workflow_id: Optional[str] = Field(default=None, description="Reference to the WorkflowX this service executes.")

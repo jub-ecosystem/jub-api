@@ -98,8 +98,7 @@ async def bulk_assign_catalogs(
             }
           ]
         }
-      ],
-      "level": 0
+      ]
     }
     ```
     """
@@ -108,14 +107,14 @@ async def bulk_assign_catalogs(
         raise check.unwrap_err().to_http_exception()
 
     catalog_ids: List[str] = []
-    for catalog_dto in payload.catalogs:
+    for level, catalog_dto in enumerate(payload.catalogs):
         result = await cat_svc.create_catalog_bulk(catalog_dto)
         if result.is_err:
             raise result.unwrap_err().to_http_exception()
         cid = result.unwrap()
         catalog_ids.append(cid)
 
-        link_result = await obs_svc.add_catalog(observatory_id, cid, payload.level)
+        link_result = await obs_svc.add_catalog(observatory_id, cid, level)
         if link_result.is_err:
             raise link_result.unwrap_err().to_http_exception()
 

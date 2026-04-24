@@ -26,12 +26,10 @@ L = Log(
 )
 
 
+
 class AuthenticationService:
-    def __init__(self):
-        self.xolo = XoloClient(
-            api_url=os.environ.get("XOLO_API_URL", "http://localhost:10000/api/v4"),
-            secret=os.environ.get("XOLO_SECRET_KEY")
-        )
+    def __init__(self, xolo: XoloClient ):
+        self.xolo = xolo
     async def login(self, dto: XoloDTO.AuthAttemptDTO) -> Result[XoloDTO.AuthenticatedDTO, EX.JubError]:
         try:
             res = self.xolo.auth(
@@ -61,6 +59,13 @@ class AuthenticationService:
         profile_photo: Optional[str]="",
     ) -> Result[XoloDTO.CreatedUserResponseDTO, EX.JubError]:
         try:
+            L.debug({
+                "msg": "Attempting to sign up user with Xolo",
+                "username": username,
+                "email": email,
+                "scope": scope,
+                "api_url": self.xolo.api_url
+            })
             res = self.xolo.signup(
                 username      = username,
                 first_name    = first_name,
@@ -2556,6 +2561,353 @@ class TasksService:
         
         return await self.task_repo.add_retry_attempt(task_id, new_attempt)
 
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SERVICE / WORKFLOW DOMAIN SERVICES
+# ══════════════════════════════════════════════════════════════════════════════
+
+class BuildingBlockService:
+    def __init__(self, repo: R.BuildingBlockRepository):
+        self.repo = repo
+
+    async def create(self, dto: DTO.BuildingBlockCreateDTO) -> Result[M.BuildingBlock, EX.JubError]:
+        model = M.BuildingBlock(
+            building_block_id = f"bb_{uuid.uuid4().hex[:12]}",
+            name              = dto.name,
+            command           = dto.command,
+            image             = dto.image,
+            description       = dto.description or "",
+        )
+        res = await self.repo.insert(model)
+        if res.is_err:
+            return res
+        return Ok(model)
+
+    async def get(self, building_block_id: str) -> Result[M.BuildingBlock, EX.JubError]:
+        return await self.repo.get_by_id(building_block_id)
+
+    async def list(self, skip: int = 0, limit: int = 100) -> Result[List[M.BuildingBlock], EX.JubError]:
+        return await self.repo.find({}, skip=skip, limit=limit)
+
+    async def update(self, building_block_id: str, dto: DTO.BuildingBlockUpdateDTO) -> Result[M.BuildingBlock, EX.JubError]:
+        existing = await self.repo.get_by_id(building_block_id)
+        if existing.is_err:
+            return existing
+        model = existing.unwrap()
+        if dto.name        is not None: model.name        = dto.name
+        if dto.command     is not None: model.command     = dto.command
+        if dto.image       is not None: model.image       = dto.image
+        if dto.description is not None: model.description = dto.description
+        model.updated_at = DT.datetime.now(DT.timezone.utc)
+        res = await self.repo.update(building_block_id, model.model_dump())
+        if res.is_err:
+            return Err(res.unwrap_err())
+        return Ok(model)
+
+    async def delete(self, building_block_id: str) -> Result[bool, EX.JubError]:
+        existing = await self.repo.get_by_id(building_block_id)
+        if existing.is_err:
+            return Err(EX.NotFound(f"BuildingBlock '{building_block_id}' not found."))
+        return await self.repo.delete(building_block_id)
+
+
+class PatternService:
+    def __init__(self, repo: R.PatternRepository):
+        self.repo = repo
+
+    async def create(self, dto: DTO.PatternCreateDTO) -> Result[M.PatternX, EX.JubError]:
+        model = M.PatternX(
+            pattern_id        = f"pat_{uuid.uuid4().hex[:12]}",
+            name              = dto.name,
+            task              = dto.task,
+            pattern           = dto.pattern,
+            description       = dto.description or "",
+            workers           = dto.workers,
+            loadbalancer      = dto.loadbalancer,
+            building_block_id = dto.building_block_id,
+        )
+        res = await self.repo.insert(model)
+        if res.is_err:
+            return res
+        return Ok(model)
+
+    async def get(self, pattern_id: str) -> Result[M.PatternX, EX.JubError]:
+        return await self.repo.get_by_id(pattern_id)
+
+    async def list(self, skip: int = 0, limit: int = 100) -> Result[List[M.PatternX], EX.JubError]:
+        return await self.repo.find({}, skip=skip, limit=limit)
+
+    async def update(self, pattern_id: str, dto: DTO.PatternUpdateDTO) -> Result[M.PatternX, EX.JubError]:
+        existing = await self.repo.get_by_id(pattern_id)
+        if existing.is_err:
+            return existing
+        model = existing.unwrap()
+        if dto.name             is not None: model.name             = dto.name
+        if dto.task             is not None: model.task             = dto.task
+        if dto.pattern          is not None: model.pattern          = dto.pattern
+        if dto.description      is not None: model.description      = dto.description
+        if dto.workers          is not None: model.workers          = dto.workers
+        if dto.loadbalancer     is not None: model.loadbalancer     = dto.loadbalancer
+        if dto.building_block_id is not None: model.building_block_id = dto.building_block_id
+        model.updated_at = DT.datetime.now(DT.timezone.utc)
+        res = await self.repo.update(pattern_id, model.model_dump())
+        if res.is_err:
+            return Err(res.unwrap_err())
+        return Ok(model)
+
+    async def delete(self, pattern_id: str) -> Result[bool, EX.JubError]:
+        existing = await self.repo.get_by_id(pattern_id)
+        if existing.is_err:
+            return Err(EX.NotFound(f"Pattern '{pattern_id}' not found."))
+        return await self.repo.delete(pattern_id)
+
+
+class StageService:
+    def __init__(self, repo: R.StageRepository):
+        self.repo = repo
+
+    async def create(self, dto: DTO.StageCreateDTO) -> Result[M.StageX, EX.JubError]:
+        model = M.StageX(
+            stage_id          = f"stg_{uuid.uuid4().hex[:12]}",
+            name              = dto.name,
+            source            = dto.source,
+            sink              = dto.sink,
+            endpoint          = dto.endpoint,
+            transformation_id = dto.transformation_id,
+        )
+        res = await self.repo.insert(model)
+        if res.is_err:
+            return res
+        return Ok(model)
+
+    async def get(self, stage_id: str) -> Result[M.StageX, EX.JubError]:
+        return await self.repo.get_by_id(stage_id)
+
+    async def list(self, skip: int = 0, limit: int = 100) -> Result[List[M.StageX], EX.JubError]:
+        return await self.repo.find({}, skip=skip, limit=limit)
+
+    async def update(self, stage_id: str, dto: DTO.StageUpdateDTO) -> Result[M.StageX, EX.JubError]:
+        existing = await self.repo.get_by_id(stage_id)
+        if existing.is_err:
+            return existing
+        model = existing.unwrap()
+        if dto.name             is not None: model.name             = dto.name
+        if dto.source           is not None: model.source           = dto.source
+        if dto.sink             is not None: model.sink             = dto.sink
+        if dto.endpoint         is not None: model.endpoint         = dto.endpoint
+        if dto.transformation_id is not None: model.transformation_id = dto.transformation_id
+        model.updated_at = DT.datetime.now(DT.timezone.utc)
+        res = await self.repo.update(stage_id, model.model_dump())
+        if res.is_err:
+            return Err(res.unwrap_err())
+        return Ok(model)
+
+    async def delete(self, stage_id: str) -> Result[bool, EX.JubError]:
+        existing = await self.repo.get_by_id(stage_id)
+        if existing.is_err:
+            return Err(EX.NotFound(f"Stage '{stage_id}' not found."))
+        return await self.repo.delete(stage_id)
+
+
+class WorkflowService:
+    def __init__(self, repo: R.WorkflowRepository, stage_repo: R.StageRepository):
+        self.repo       = repo
+        self.stage_repo = stage_repo
+
+    async def create(self, dto: DTO.WorkflowCreateDTO) -> Result[M.WorkflowX, EX.JubError]:
+        model = M.WorkflowX(
+            workflow_id = f"wf_{uuid.uuid4().hex[:12]}",
+            name        = dto.name,
+            stage_ids   = dto.stage_ids,
+        )
+        res = await self.repo.insert(model)
+        if res.is_err:
+            return res
+        return Ok(model)
+
+    async def get(self, workflow_id: str) -> Result[M.WorkflowX, EX.JubError]:
+        return await self.repo.get_by_id(workflow_id)
+
+    async def list(self, skip: int = 0, limit: int = 100) -> Result[List[M.WorkflowX], EX.JubError]:
+        return await self.repo.find({}, skip=skip, limit=limit)
+
+    async def update(self, workflow_id: str, dto: DTO.WorkflowUpdateDTO) -> Result[M.WorkflowX, EX.JubError]:
+        existing = await self.repo.get_by_id(workflow_id)
+        if existing.is_err:
+            return existing
+        model = existing.unwrap()
+        if dto.name      is not None: model.name      = dto.name
+        if dto.stage_ids is not None: model.stage_ids = dto.stage_ids
+        model.updated_at = DT.datetime.now(DT.timezone.utc)
+        res = await self.repo.update(workflow_id, model.model_dump())
+        if res.is_err:
+            return Err(res.unwrap_err())
+        return Ok(model)
+
+    async def delete(self, workflow_id: str, cascade: bool = False) -> Result[dict, EX.JubError]:
+        existing = await self.repo.get_by_id(workflow_id)
+        if existing.is_err:
+            return Err(EX.NotFound(f"Workflow '{workflow_id}' not found."))
+        workflow     = existing.unwrap()
+        stages_count = 0
+        if cascade and workflow.stage_ids:
+            del_res = await self.stage_repo.delete_many_by_ids(workflow.stage_ids)
+            if del_res.is_ok:
+                stages_count = del_res.unwrap()
+        res = await self.repo.delete(workflow_id)
+        if res.is_err:
+            return Err(res.unwrap_err())
+        return Ok({"deleted": True, "stages": stages_count})
+
+
+class ServiceXService:
+    def __init__(
+        self,
+        repo:          R.ServiceRepository,
+        workflow_repo: R.WorkflowRepository,
+        stage_repo:    R.StageRepository,
+        pattern_repo:  R.PatternRepository,
+        bb_repo:       R.BuildingBlockRepository,
+    ):
+        self.repo          = repo
+        self.workflow_repo = workflow_repo
+        self.stage_repo    = stage_repo
+        self.pattern_repo  = pattern_repo
+        self.bb_repo       = bb_repo
+
+    async def create(self, dto: DTO.ServiceCreateDTO) -> Result[M.ServiceX, EX.JubError]:
+        model = M.ServiceX(
+            service_id  = f"svc_{uuid.uuid4().hex[:12]}",
+            name        = dto.name,
+            description = dto.description or "",
+            owner_id    = dto.owner_id,
+            public      = dto.public,
+            workflow_id = dto.workflow_id,
+        )
+        res = await self.repo.insert(model)
+        if res.is_err:
+            return res
+        return Ok(model)
+
+    async def get(self, service_id: str) -> Result[M.ServiceX, EX.JubError]:
+        return await self.repo.get_by_id(service_id)
+
+    async def list(self, skip: int = 0, limit: int = 100) -> Result[List[M.ServiceX], EX.JubError]:
+        return await self.repo.find({}, skip=skip, limit=limit)
+
+    async def update(self, service_id: str, dto: DTO.ServiceUpdateDTO) -> Result[M.ServiceX, EX.JubError]:
+        existing = await self.repo.get_by_id(service_id)
+        if existing.is_err:
+            return existing
+        model = existing.unwrap()
+        if dto.name        is not None: model.name        = dto.name
+        if dto.description is not None: model.description = dto.description
+        if dto.public      is not None: model.public      = dto.public
+        if dto.workflow_id is not None: model.workflow_id = dto.workflow_id
+        model.updated_at = DT.datetime.now(DT.timezone.utc)
+        res = await self.repo.update(service_id, model.model_dump())
+        if res.is_err:
+            return Err(res.unwrap_err())
+        return Ok(model)
+
+    async def delete(self, service_id: str) -> Result[DTO.ServiceDeleteResponseDTO, EX.JubError]:
+        existing = await self.repo.get_by_id(service_id)
+        if existing.is_err:
+            return Err(EX.NotFound(f"Service '{service_id}' not found."))
+        res = await self.repo.delete(service_id)
+        if res.is_err:
+            return Err(res.unwrap_err())
+        return Ok(DTO.ServiceDeleteResponseDTO(deleted=True, service_id=service_id))
+
+    async def index(self, dto: DTO.ServiceIndexDTO) -> Result[DTO.ServiceIndexResponseDTO, EX.JubError]:
+        """One-shot create: Service → Workflow → Stages → Patterns → BuildingBlocks."""
+        bb_ids      : List[str] = []
+        pattern_ids : List[str] = []
+        stage_ids   : List[str] = []
+        workflow_id : Optional[str] = dto.workflow_id
+
+        if dto.workflow:
+            for stage_inline in dto.workflow.stages:
+                transformation_id: Optional[str] = stage_inline.transformation_id
+
+                if stage_inline.transformation:
+                    t = stage_inline.transformation
+                    bb_id: Optional[str] = t.building_block_id
+
+                    if t.building_block:
+                        bb = t.building_block
+                        bb_model = M.BuildingBlock(
+                            building_block_id = f"bb_{uuid.uuid4().hex[:12]}",
+                            name              = bb.name,
+                            command           = bb.command,
+                            image             = bb.image,
+                            description       = bb.description or "",
+                        )
+                        res = await self.bb_repo.insert(bb_model)
+                        if res.is_err:
+                            return Err(res.unwrap_err())
+                        bb_id = bb_model.building_block_id
+                        bb_ids.append(bb_id)
+
+                    pat_model = M.PatternX(
+                        pattern_id        = f"pat_{uuid.uuid4().hex[:12]}",
+                        name              = t.name,
+                        task              = t.task,
+                        pattern           = t.pattern,
+                        description       = t.description or "",
+                        workers           = t.workers,
+                        loadbalancer      = t.loadbalancer,
+                        building_block_id = bb_id,
+                    )
+                    res = await self.pattern_repo.insert(pat_model)
+                    if res.is_err:
+                        return Err(res.unwrap_err())
+                    transformation_id = pat_model.pattern_id
+                    pattern_ids.append(transformation_id)
+
+                stg_model = M.StageX(
+                    stage_id          = f"stg_{uuid.uuid4().hex[:12]}",
+                    name              = stage_inline.name,
+                    source            = stage_inline.source,
+                    sink              = stage_inline.sink,
+                    endpoint          = stage_inline.endpoint,
+                    transformation_id = transformation_id,
+                )
+                res = await self.stage_repo.insert(stg_model)
+                if res.is_err:
+                    return Err(res.unwrap_err())
+                stage_ids.append(stg_model.stage_id)
+
+            wf_model = M.WorkflowX(
+                workflow_id = f"wf_{uuid.uuid4().hex[:12]}",
+                name        = dto.workflow.name,
+                stage_ids   = stage_ids,
+            )
+            res = await self.workflow_repo.insert(wf_model)
+            if res.is_err:
+                return Err(res.unwrap_err())
+            workflow_id = wf_model.workflow_id
+
+        svc_model = M.ServiceX(
+            service_id  = f"svc_{uuid.uuid4().hex[:12]}",
+            name        = dto.name,
+            description = dto.description or "",
+            owner_id    = dto.owner_id,
+            public      = dto.public,
+            workflow_id = workflow_id,
+        )
+        res = await self.repo.insert(svc_model)
+        if res.is_err:
+            return Err(res.unwrap_err())
+
+        return Ok(DTO.ServiceIndexResponseDTO(
+            service_id        = svc_model.service_id,
+            workflow_id       = workflow_id,
+            stage_ids         = stage_ids,
+            pattern_ids       = pattern_ids,
+            building_block_ids= bb_ids,
+        ))
 
 
 class DataIngestionService:

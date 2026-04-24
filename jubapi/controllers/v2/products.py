@@ -184,8 +184,8 @@ async def _process_upload(
 async def upload_product_file(
     product_id:      str,
     background_tasks: BackgroundTasks,
-    user_id:         str               = Form(..., description="User queuing this upload."),
     file:            UploadFile         = File(..., description="Data file to ingest for this product."),
+    current_user:     DTO.UserProfileDTO = Depends(MX.get_current_user),
     prod_svc:        S.ProductService   = Depends(MX.get_product_service),
     task_svc:        S.TasksService     = Depends(MX.get_tasks_service),
     storage:         StorageBackend     = Depends(MX.get_storage_backend),
@@ -211,7 +211,7 @@ async def upload_product_file(
 
     # Create a PENDING task so the job is trackable
     task_result = await task_svc.create_task(DTO.CreateTaskDTO(
-        user_id        = user_id,
+        user_id        = current_user.user_id,
         observatory_id = observatory_id,
         title          = f"Index: {product.name} — {file.filename}",
         description    = f"File ingestion queued for product {product_id}.",

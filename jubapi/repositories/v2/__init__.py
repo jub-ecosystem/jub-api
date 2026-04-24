@@ -558,3 +558,45 @@ class DataRecordsRepository(BaseRepository[M.DataRecord]):
         except Exception as e:
             L.error(f"Error deleting records for source {source_id}: {e}")
             return Err(EX.UnknownError(str(e)))
+
+
+# ── Service / Workflow domain ──────────────────────────────────────────────────
+
+class BuildingBlockRepository(BaseRepository[M.BuildingBlock]):
+    def __init__(self, collection: Collection):
+        super().__init__(collection, M.BuildingBlock, "building_block_id")
+
+
+class PatternRepository(BaseRepository[M.PatternX]):
+    def __init__(self, collection: Collection):
+        super().__init__(collection, M.PatternX, "pattern_id")
+
+
+class StageRepository(BaseRepository[M.StageX]):
+    def __init__(self, collection: Collection):
+        super().__init__(collection, M.StageX, "stage_id")
+
+    async def delete_many_by_ids(self, stage_ids: List[str]) -> Result[int, EX.JubError]:
+        try:
+            result = await self.collection.delete_many({"stage_id": {"$in": stage_ids}})
+            return Ok(result.deleted_count)
+        except Exception as e:
+            return Err(EX.UnknownError(str(e)))
+
+
+class WorkflowRepository(BaseRepository[M.WorkflowX]):
+    def __init__(self, collection: Collection):
+        super().__init__(collection, M.WorkflowX, "workflow_id")
+
+
+class ServiceRepository(BaseRepository[M.ServiceX]):
+    def __init__(self, collection: Collection):
+        super().__init__(collection, M.ServiceX, "service_id")
+
+    async def search(self, mongo_filter: dict, skip: int = 0, limit: int = 100) -> Result[List[M.ServiceX], EX.JubError]:
+        try:
+            cursor = self.collection.find(mongo_filter).skip(skip).limit(limit)
+            docs   = await cursor.to_list(length=limit)
+            return Ok([M.ServiceX.model_validate(d) for d in docs])
+        except Exception as e:
+            return Err(EX.UnknownError(str(e)))

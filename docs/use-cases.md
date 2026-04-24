@@ -4,7 +4,7 @@ This page covers the most common workflows from provisioning an observatory to g
 
 ---
 
-## Use Case 1 — Full Observatory Provisioning (Primary Workflow)
+## Use Case 1 — Full Observatory Provisioning
 
 This is the end-to-end lifecycle for creating a new observable data space.
 The observatory starts disabled and becomes publicly searchable only after explicit completion.
@@ -12,7 +12,7 @@ The observatory starts disabled and becomes publicly searchable only after expli
 ```
 POST /observatories/setup         → observatory created (disabled) + task created (pending)
      │
-POST /{id}/catalogs/bulk          → spatial + temporal + interest vocabularies loaded
+POST /{id}/catalogs/bulk          → spatial + temporal + interest variables loaded
      │
 POST /{id}/products/bulk          → products registered, product_ids returned
      │
@@ -26,7 +26,7 @@ POST /tasks/{task_id}/complete    → observatory enabled (is_disabled → false
 
 ---
 
-### Step 1 — Create the observatory (disabled)
+### Step 1 — Create the observatory
 
 ```http
 POST /api/v2/observatories/setup

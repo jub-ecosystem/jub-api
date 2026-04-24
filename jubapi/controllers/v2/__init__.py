@@ -8,3 +8,10 @@ from jubapi.controllers.v2.notifications import router as notifications
 from jubapi.controllers.v2.tasks import router as tasks
 from jubapi.controllers.v2.datasources import router as datasources
 from jubapi.controllers.v2.products import router as products
+from jubapi.controllers.v2.services import (
+    bb_router as building_blocks,
+    pattern_router as patterns,
+    stage_router as stages,
+    workflow_router as workflows,
+    service_router as services,
+)

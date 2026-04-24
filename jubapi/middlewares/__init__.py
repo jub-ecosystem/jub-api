@@ -106,10 +106,10 @@ def get_notification_service()->S.NotificationService:
     )
     return service
 
-def get_user_profile_service()->S.UsersProfileXService:
+def get_user_profile_service(xolo: XoloClient=Depends(get_xolo_client))->S.UsersProfileXService:
     collection           = get_collection(name=DC.CollectionNames.USER_PROFILES.value)
     repository           = R.UserProfileXRepository(collection= collection)
-    auth_service         = S.AuthenticationService()
+    auth_service         = S.AuthenticationService(xolo=xolo)
     notification_service = S.NotificationService(repository=R.NotificationsRepository(get_collection(DC.CollectionNames.NOTIFICATIONS.value)))
     service = S.UsersProfileXService(
         user_profile_repository = repository,
@@ -158,7 +158,6 @@ async def __get_current_user(
         
         user_dto            = user_result.unwrap()
         user_profile_result = await users_profiles_service.get_user_profile_by_username(username = user_dto.username)
-        # print("User profile result:", user_profile_result)
         if user_profile_result.is_err:
             e = user_profile_result.unwrap_err()
             L.error({
@@ -223,6 +222,43 @@ def get_data_query_service() -> S.DataQueryService:
         catalog_item_repo         = R.CatalogItemsRepository(get_collection(DC.CollectionNames.CATALOG_ITEMS.value)),
         catalog_alias_repo        = R.CatalogItemAliasesRepository(get_collection(DC.CollectionNames.CATALOG_ITEM_ALIASES.value)),
         catalog_item_alias_link_repo = R.CatalogItemToCatalogAliasLinkRepository(get_collection(DC.CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value)),
+    )
+
+
+# ── Service / Workflow domain ──────────────────────────────────────────────────
+
+def get_building_block_service() -> S.BuildingBlockService:
+    return S.BuildingBlockService(
+        repo=R.BuildingBlockRepository(get_collection(DC.CollectionNames.BUILDING_BLOCKS.value))
+    )
+
+
+def get_pattern_service() -> S.PatternService:
+    return S.PatternService(
+        repo=R.PatternRepository(get_collection(DC.CollectionNames.PATTERNS.value))
+    )
+
+
+def get_stage_service() -> S.StageService:
+    return S.StageService(
+        repo=R.StageRepository(get_collection(DC.CollectionNames.STAGES.value))
+    )
+
+
+def get_workflow_service() -> S.WorkflowService:
+    return S.WorkflowService(
+        repo       = R.WorkflowRepository(get_collection(DC.CollectionNames.WORKFLOWS.value)),
+        stage_repo = R.StageRepository(get_collection(DC.CollectionNames.STAGES.value)),
+    )
+
+
+def get_service_x_service() -> S.ServiceXService:
+    return S.ServiceXService(
+        repo          = R.ServiceRepository(get_collection(DC.CollectionNames.SERVICES.value)),
+        workflow_repo = R.WorkflowRepository(get_collection(DC.CollectionNames.WORKFLOWS.value)),
+        stage_repo    = R.StageRepository(get_collection(DC.CollectionNames.STAGES.value)),
+        pattern_repo  = R.PatternRepository(get_collection(DC.CollectionNames.PATTERNS.value)),
+        bb_repo       = R.BuildingBlockRepository(get_collection(DC.CollectionNames.BUILDING_BLOCKS.value)),
     )
 
 
