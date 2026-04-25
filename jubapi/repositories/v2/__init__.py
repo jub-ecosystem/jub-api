@@ -4,7 +4,7 @@ from jubapi.repositories.v2.base import BaseRepository
 from motor.motor_asyncio import AsyncIOMotorCollection as Collection
 import datetime as DT
 import jubapi.models.v2 as M
-from typing import List,Dict
+from typing import List, Dict, Optional
 from option import Result,Err,Ok
 import jubapi.errors as EX
 from jubapi.log.log import Log
@@ -105,11 +105,26 @@ class CatalogItemAliasesRepository(BaseRepository[M.CatalogItemAlias]):
     def __init__(self, collection: Collection):
         super().__init__(collection, M.CatalogItemAlias, "catalog_item_alias_id")
 
+    async def find_by_value(self, value: str) -> List[M.CatalogItemAlias]:
+        cursor = self.collection.find({"value": value})
+        docs = await cursor.to_list(length=None)
+        return [M.CatalogItemAlias.from_doc(doc) for doc in docs]
+
 
 # 1. Observatory <-> Product
 class ObservatoryToProductLinkRepository(BaseRepository[M.ObservatoryToProductLink]):
     def __init__(self, collection: Collection):
         super().__init__(collection, M.ObservatoryToProductLink, "observatory_id")
+
+    async def get_observatory_ids_by_product_id(self, product_id: str) -> List[str]:
+        cursor = self.collection.find({"product_id": product_id}, {"observatory_id": 1, "_id": 0})
+        docs = await cursor.to_list(length=None)
+        return [d["observatory_id"] for d in docs if d.get("observatory_id")]
+
+    async def get_all_observatory_ids_with_products(self) -> set:
+        cursor = self.collection.find({}, {"observatory_id": 1, "_id": 0})
+        docs = await cursor.to_list(length=None)
+        return {d["observatory_id"] for d in docs if d.get("observatory_id")}
 
 # 2. Observatory <-> Catalog
 class ObservatoryToCatalogLinkRepository(BaseRepository[M.ObservatoryToCatalogLink]):
@@ -167,6 +182,11 @@ class ProductToCatalogItemLinkRepository(BaseRepository[M.CatalogItemToProductLi
     def __init__(self, collection: Collection):
         super().__init__(collection, M.CatalogItemToProductLink, "product_id")
     
+    async def get_product_ids_by_catalog_item_id(self, catalog_item_id: str) -> List[str]:
+        cursor = self.collection.find({"catalog_item_id": catalog_item_id}, {"product_id": 1, "_id": 0})
+        docs = await cursor.to_list(length=None)
+        return [d["product_id"] for d in docs if d.get("product_id")]
+
     async def get_by_product_id(self,product_id:str)->Result[List[M.CatalogItemToProductLink],EX.JubError]:
         try: 
             result = self.collection.find({"product_id": product_id})
@@ -192,6 +212,10 @@ class ProductToCatalogItemLinkRepository(BaseRepository[M.CatalogItemToProductLi
 class CatalogItemToCatalogAliasLinkRepository(BaseRepository[M.CatalogItemToCatalogAliasLink]):
     def __init__(self, collection: Collection):
         super().__init__(collection, M.CatalogItemToCatalogAliasLink, "catalog_item_id")
+
+    async def get_catalog_item_id_by_alias_id(self, alias_id: str) -> Optional[str]:
+        doc = await self.collection.find_one({"catalog_item_alias_id": alias_id})
+        return doc.get("catalog_item_id") if doc else None
 
 # 5. Catalog Item -> Catalog Item (The Hierarchy Engine)
 class CatalogItemRelationshipRepository(BaseRepository[M.CatalogItemRelationship]):
@@ -595,8 +619,18 @@ class ServiceRepository(BaseRepository[M.ServiceX]):
 
     async def search(self, mongo_filter: dict, skip: int = 0, limit: int = 100) -> Result[List[M.ServiceX], EX.JubError]:
         try:
-            cursor = self.collection.find(mongo_filter).skip(skip).limit(limit)
+            # x = await self.find(query=mongo_filter, skip=skip, limit=limit)
+            # print(x)
+            cursor = self.collection.find(mongo_filter,skip = skip, limit = limit)
             docs   = await cursor.to_list(length=limit)
+            L.debug({
+                "event":"SERVICE_REPOSITORY.SEARCH",
+                "message": "Service search executed",
+                "filter": mongo_filter,
+                "skip": skip,
+                "limit": limit,
+                "result_count": len(docs)
+            })
             return Ok([M.ServiceX.model_validate(d) for d in docs])
         except Exception as e:
             return Err(EX.UnknownError(str(e)))

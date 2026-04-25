@@ -18,7 +18,7 @@ async def services(test_db):
     product_repository            = R.ProductsRepository(test_db[CollectionNames.PRODUCTS.value])
     catalog_repository            = R.CatalogsRepository(test_db[CollectionNames.CATALOGS.value])
     catalog_item_repository       = R.CatalogItemsRepository(test_db[CollectionNames.CATALOG_ITEMS.value])
-    catalog_item_value_repository = R.CatalogItemAliasesRepository(test_db[CollectionNames.CATALOG_ITEM_VALUES.value])
+    catalog_item_alias_repository = R.CatalogItemAliasesRepository(test_db[CollectionNames.CATALOG_ITEM_ALIASES.value])
     
     # 2. Link Manager
     link_manager = S.GraphLinkManager(
@@ -35,7 +35,7 @@ async def services(test_db):
         catalog_item_relationship_repository       = link_manager.catalog_item_relationship_repository,
         catalog_item_repository                    = catalog_item_repository,
         product_repository                         = product_repository,
-        catalog_alias_repository                   = catalog_item_value_repository,
+        catalog_alias_repository                   = catalog_item_alias_repository,
         catalog_item_catalog_alias_link_repository = link_manager.catalog_item_catalog_alias_link_repository,
         observatory_catalog_link_repository        = link_manager.observatory_catalog_link_repository,
         catalog_catalog_item_link_repository       = link_manager.catalog_catalog_item_link_repository,
@@ -46,7 +46,7 @@ async def services(test_db):
 
     # 3. Services
     return {
-        "catalog": S.CatalogService(catalog_repository, catalog_item_repository, catalog_item_value_repository, link_manager),
+        "catalog": S.CatalogService(catalog_repository, catalog_item_repository, catalog_item_alias_repository, link_manager),
         "product": S.ProductService(product_repository, link_manager),
         "observatory": S.ObservatoriesService(
             observatory_product_link_repository = link_manager.observatory_product_link_repository,
@@ -372,8 +372,7 @@ async def records_for_resolution(services):
         {"catalog_item_id": "ID_ALPHA", "value": "ALPHA", "code": 99001, "name": "Alpha State", "value_type": "STRING", "catalog_type": "SPATIAL"},
         {"catalog_item_id": "ID_BETA",  "value": "BETA",  "code": 99002, "name": "Beta State",  "value_type": "STRING", "catalog_type": "SPATIAL"},
     ])
-    # The services fixture wires catalog_alias_repository to CATALOG_ITEM_VALUES
-    await db[CollectionNames.CATALOG_ITEM_VALUES.value].insert_many([
+    await db[CollectionNames.CATALOG_ITEM_ALIASES.value].insert_many([
         {"catalog_item_alias_id": "ALIAS_ALPHA", "value": "AlphaAlias", "code": 0, "value_type": "STRING"},
     ])
     await db[CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value].insert_many([

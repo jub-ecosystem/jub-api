@@ -1,6 +1,8 @@
 import os
-from typing import List
-from fastapi import Depends, Query, status, UploadFile, File, Form, BackgroundTasks
+import mimetypes
+from typing import List, Optional
+from fastapi import Depends, Query, status, UploadFile, File, Form, BackgroundTasks, HTTPException
+from fastapi.responses import Response
 from fastapi.routing import APIRouter
 from nanoid import generate as nanoid
 
@@ -127,6 +129,28 @@ async def get_tags(
     return {"product_id": product_id, "catalog_item_ids": result.unwrap()}
 
 
+@router.get("/{product_id}/tags/details", response_model=List[DTO.CatalogItemXResponseDTO])
+async def get_tag_details(
+    product_id: str,
+    prod_svc: S.ProductService = Depends(MX.get_product_service),
+    cat_svc:  S.CatalogService = Depends(MX.get_catalog_service),
+):
+    check = await prod_svc.get_product_by_id(product_id)
+    if check.is_err:
+        raise check.unwrap_err().to_http_exception()
+
+    tags_result = await prod_svc.get_product_tags(product_id)
+    if tags_result.is_err:
+        raise tags_result.unwrap_err().to_http_exception()
+
+    items = []
+    for item_id in tags_result.unwrap():
+        item_result = await cat_svc.get_catalog_item(item_id)
+        if item_result.is_ok:
+            items.append(DTO.CatalogItemXResponseDTO.from_model(item_result.unwrap()))
+    return items
+
+
 @router.post("/{product_id}/tags", status_code=status.HTTP_201_CREATED)
 async def add_tags(
     product_id: str,
@@ -231,3 +255,50 @@ async def upload_product_file(
     )
 
     return DTO.ProductUploadResponseDTO(job_id=job_id, product_id=product_id)
+
+
+@router.get("/{product_id}/download")
+async def download_product_file(
+    product_id: str,
+    job_id:     Optional[str]      = Query(None, description="Specific upload job to download. Defaults to the latest."),
+    prod_svc:   S.ProductService   = Depends(MX.get_product_service),
+    storage:    StorageBackend     = Depends(MX.get_storage_backend),
+):
+    """
+    Downloads a previously uploaded file for a product.
+    If *job_id* is omitted the most recently uploaded file is returned.
+    """
+    check = await prod_svc.get_product_by_id(product_id)
+    if check.is_err:
+        log.error(f"Download failed: product {product_id} not found.")
+        raise check.unwrap_err().to_http_exception()
+
+    log.debug({
+        "action": "download_product_file",
+        "product_id": product_id,
+        "job_id": job_id,
+    })
+
+    prefix = f"products/{product_id}/{job_id}" if job_id else f"products/{product_id}"
+    keys   = await storage.list(prefix)
+
+    if not keys:
+        log.error(f"Download failed: no files found for product {product_id}.")
+        raise HTTPException(status_code=404, detail="No files found for this product.")
+
+    key      = keys[-1]          # latest file
+    filename = key.split("/")[-1]
+    log.debug({
+        "action": "get_product_file",
+        "product_id": product_id,
+        "job_id": job_id,
+        "storage_key": key,
+    })
+    data     = await storage.get(key)
+
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return Response(
+        content     = data,
+        media_type  = media_type,
+        headers     = {"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

@@ -22,10 +22,10 @@ class BaseRepository(Generic[T]):
         self.model_class = model_class
         self.id_field = id_field
 
-    async def find(self, query: dict, limit: int = 100) -> Result[List[T], EX.JubError]:
+    async def find(self, query: dict, skip: int = 0, limit: int = 100) -> Result[List[T], EX.JubError]:
         """Finds documents based on a MongoDB query dict."""
         try:
-            cursor = self.collection.find(query).limit(limit)
+            cursor = self.collection.find(query).skip(skip).limit(limit)
             return Ok([self.model_class.model_validate(doc) for doc in await cursor.to_list(length=limit)])
         except Exception as e:
             L.error(f"Error fetching items: {e}")

@@ -928,6 +928,102 @@ class ServiceDTO(BaseModel):
         )
 
 
+# ── Hydrated detail DTOs (used by search/services) ───────────────────────────
+
+class PatternDetailDTO(BaseModel):
+    pattern_id: str
+    name: str
+    task: str
+    pattern: str
+    description: str
+    workers: int
+    loadbalancer: str
+    building_block: Optional['BuildingBlockDTO'] = None
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.PatternX', building_block: Optional['BuildingBlockDTO'] = None) -> 'PatternDetailDTO':
+        return PatternDetailDTO(
+            pattern_id    = m.pattern_id,
+            name          = m.name,
+            task          = m.task,
+            pattern       = m.pattern,
+            description   = m.description or "",
+            workers       = m.workers,
+            loadbalancer  = m.loadbalancer,
+            building_block= building_block,
+            created_at    = m.created_at.isoformat(),
+            updated_at    = m.updated_at.isoformat(),
+        )
+
+
+class StageDetailDTO(BaseModel):
+    stage_id: str
+    name: str
+    source: str
+    sink: str
+    endpoint: str
+    transformation: Optional[PatternDetailDTO] = None
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.StageX', transformation: Optional[PatternDetailDTO] = None) -> 'StageDetailDTO':
+        return StageDetailDTO(
+            stage_id      = m.stage_id,
+            name          = m.name,
+            source        = m.source,
+            sink          = m.sink,
+            endpoint      = m.endpoint,
+            transformation= transformation,
+            created_at    = m.created_at.isoformat(),
+            updated_at    = m.updated_at.isoformat(),
+        )
+
+
+class WorkflowDetailDTO(BaseModel):
+    workflow_id: str
+    name: str
+    stages: List[StageDetailDTO]
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.WorkflowX', stages: List[StageDetailDTO]) -> 'WorkflowDetailDTO':
+        return WorkflowDetailDTO(
+            workflow_id = m.workflow_id,
+            name        = m.name,
+            stages      = stages,
+            created_at  = m.created_at.isoformat(),
+            updated_at  = m.updated_at.isoformat(),
+        )
+
+
+class ServiceDetailDTO(BaseModel):
+    service_id: str
+    name: str
+    description: str
+    owner_id: str
+    public: bool
+    workflow: Optional[WorkflowDetailDTO] = None
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.ServiceX', workflow: Optional[WorkflowDetailDTO] = None) -> 'ServiceDetailDTO':
+        return ServiceDetailDTO(
+            service_id  = m.service_id,
+            name        = m.name,
+            description = m.description or "",
+            owner_id    = m.owner_id,
+            public      = m.public,
+            workflow    = workflow,
+            created_at  = m.created_at.isoformat(),
+            updated_at  = m.updated_at.isoformat(),
+        )
+
+
 # ── Bulk / Index ──────────────────────────────────────────────────────────────
 
 class BuildingBlockInlineDTO(BaseModel):

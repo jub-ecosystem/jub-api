@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import List
 
 
 class StorageBackend(ABC):
@@ -15,6 +16,10 @@ class StorageBackend(ABC):
     @abstractmethod
     async def get(self, key: str) -> bytes:
         """Retrieve the bytes stored under *key*."""
+
+    @abstractmethod
+    async def list(self, prefix: str) -> List[str]:
+        """Return all keys that start with *prefix*, sorted oldest-first."""
 
 
 class LocalStorageBackend(StorageBackend):
@@ -35,3 +40,10 @@ class LocalStorageBackend(StorageBackend):
 
     async def get(self, key: str) -> bytes:
         return (self.base / key).read_bytes()
+
+    async def list(self, prefix: str) -> List[str]:
+        root = self.base / prefix
+        if not root.exists():
+            return []
+        files = sorted(root.rglob("*"), key=lambda p: p.stat().st_mtime)
+        return [str(f.relative_to(self.base)) for f in files if f.is_file()]

@@ -26,7 +26,7 @@ async def services(test_db):
     product_repository            = R.ProductsRepository(test_db[CollectionNames.PRODUCTS.value])
     catalog_repository            = R.CatalogsRepository(test_db[CollectionNames.CATALOGS.value])
     catalog_item_repository       = R.CatalogItemsRepository(test_db[CollectionNames.CATALOG_ITEMS.value])
-    catalog_item_value_repository = R.CatalogItemAliasesRepository(test_db[CollectionNames.CATALOG_ITEM_VALUES.value])
+    catalog_item_alias_repository = R.CatalogItemAliasesRepository(test_db[CollectionNames.CATALOG_ITEM_ALIASES.value])
     
     # 2. Link Manager
     link_manager = S.GraphLinkManager(
@@ -43,7 +43,7 @@ async def services(test_db):
         catalog_item_relationship_repository       = link_manager.catalog_item_relationship_repository,
         catalog_item_repository                    = catalog_item_repository,
         product_repository                         = product_repository,
-        catalog_alias_repository                   = catalog_item_value_repository,
+        catalog_alias_repository                   = catalog_item_alias_repository,
         catalog_item_catalog_alias_link_repository = link_manager.catalog_item_catalog_alias_link_repository,
         observatory_catalog_link_repository        = link_manager.observatory_catalog_link_repository,
         catalog_catalog_item_link_repository       = link_manager.catalog_catalog_item_link_repository,
@@ -54,7 +54,7 @@ async def services(test_db):
 
     # 3. Services
     return {
-        "catalog": S.CatalogService(catalog_repository, catalog_item_repository, catalog_item_value_repository, link_manager),
+        "catalog": S.CatalogService(catalog_repository, catalog_item_repository, catalog_item_alias_repository, link_manager),
         "product": S.ProductService(product_repository, link_manager),
         "observatory": S.ObservatoriesService(
             observatory_product_link_repository = link_manager.observatory_product_link_repository,

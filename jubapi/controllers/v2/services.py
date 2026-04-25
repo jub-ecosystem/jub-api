@@ -277,7 +277,7 @@ async def index_service(
     payload: DTO.ServiceIndexDTO,
     svc: S.ServiceXService = Depends(MX.get_service_x_service),
 ):
-    result = await svc.index(payload)
+    result = await svc.create_full(payload)
     if result.is_err:
         raise result.unwrap_err().to_http_exception()
     return result.unwrap()

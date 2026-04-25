@@ -64,7 +64,6 @@ async def test_db():
         CollectionNames.PRODUCTS.value,
         CollectionNames.CATALOGS.value,
         CollectionNames.CATALOG_ITEMS.value,
-        CollectionNames.CATALOG_ITEM_VALUES.value,
         CollectionNames.CATALOG_ITEM_ALIASES.value,
         CollectionNames.OBSERVATORY_PRODUCT_LINKS.value,
         CollectionNames.PRODUCT_CATALOGS_ITEM_LINKS.value,
@@ -72,6 +71,11 @@ async def test_db():
         CollectionNames.CATALOG_CATALOG_ITEM_LINKS.value,
         CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value,
         CollectionNames.OBSERVATORY_CATALOG_LINKS.value,
+        CollectionNames.BUILDING_BLOCKS.value,
+        CollectionNames.PATTERNS.value,
+        CollectionNames.STAGES.value,
+        CollectionNames.WORKFLOWS.value,
+        CollectionNames.SERVICES.value,
     ]
     for col in collections_to_drop:
         await db.drop_collection(col)

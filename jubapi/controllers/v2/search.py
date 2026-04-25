@@ -1,4 +1,4 @@
-from fastapi import Depends
+from fastapi import Depends, Query
 from fastapi.routing import APIRouter
 import jubapi.middlewares as M
 import jubapi.services.v2 as S
@@ -111,10 +111,28 @@ async def search_observatories(query:DTO.SearchQueryDTO, search:S.SearchService 
         log.error({
             "error": str(result.unwrap_err()),
             "query": str(query)
-        })    
-        e = result.unwrap_err()    
+        })
+        e = result.unwrap_err()
         raise e.to_http_exception()
-    
+
     response = result.unwrap()
 
-    return response 
+    return response
+
+
+@router.post("/services", summary="Search services by DSL", description=(
+    "Queries services using the SVC DSL. Examples:\n\n"
+    "- `jub.v1.SVC(*)` — all services\n"
+    "- `jub.v1.SVC(name=cancer)` — name contains 'cancer' (case-insensitive)\n"
+    "- `jub.v1.SVC(public=true)` — public only\n"
+    "- `jub.v1.SVC(owner=usr_abc)` — by owner\n"
+    "- `jub.v1.SVC(name=cancer,public=true)` — combine filters with comma"
+))
+async def search_services(
+    query: DTO.ServiceQueryDTO,
+    svc:   S.ServiceXService = Depends(M.get_service_x_service),
+):
+    result = await svc.query_services_hydrated(query.query, skip=query.skip, limit=query.limit)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    return result.unwrap()
