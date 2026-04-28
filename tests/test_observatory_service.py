@@ -31,6 +31,7 @@ async def repos(test_db):
         "obs":         R.ObservatoriesRepository(test_db[CollectionNames.OBSERVATORIES.value]),
         "products":    R.ProductsRepository(test_db[CollectionNames.PRODUCTS.value]),
         "link_manager": link_manager,
+        "review": R.ReviewRepository(test_db[CollectionNames.OBSERVATORY_REVIEWS.value])
     }
 
 
@@ -41,6 +42,7 @@ async def obs_service(repos):
         observatory_product_link_repository = repos["link_manager"].observatory_product_link_repository,
         product_repository                  = repos["products"],
         graph_link_manager                  = repos["link_manager"],
+        review_repository                   = repos["review"]
     )
 
 
