@@ -6,6 +6,7 @@ Syntax:
     jub.v1.SVC(name=cancer)       — name contains "cancer" (case-insensitive)
     jub.v1.SVC(public=true)       — only public services
     jub.v1.SVC(owner=usr_abc)     — services owned by this user
+    jub.v1.SVC(provider=NEZ)      — filter by provider (XELHUA, NEZ, EXTERNAL, OTHER)
     jub.v1.SVC(name=x,public=true)— combine filters with comma
 """
 
@@ -51,9 +52,9 @@ class ServiceQuery:
             key     = key.strip().lower()
             raw_val = raw_val.strip()
 
-            if key not in {"name", "public", "owner", "id"}:
+            if key not in {"name", "public", "owner", "id", "provider"}:
                 raise ValueError(
-                    f"Unknown filter key '{key}'. Allowed: name, public, owner, id."
+                    f"Unknown filter key '{key}'. Allowed: name, public, owner, id, provider."
                 )
 
             if key == "public":
@@ -81,6 +82,8 @@ class ServiceQuery:
                 mongo["owner_id"] = value
             elif key == "id":
                 mongo["service_id"] = value
+            elif key == "provider":
+                mongo["provider"] = value.upper()
 
         return mongo
 

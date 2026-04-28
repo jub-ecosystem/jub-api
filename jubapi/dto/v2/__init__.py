@@ -89,6 +89,7 @@ class ObservatoryXDTO(BaseModel):
     description: str = Field(default="", description="Description of the observatory")
     image_url: Optional[str] = None
     metadata: dict = Field(default_factory=dict)
+    view_count: int = Field(default=0)
     created_at: str
     updated_at: str
     @staticmethod
@@ -97,10 +98,44 @@ class ObservatoryXDTO(BaseModel):
             observatory_id = model.observatory_id,
             title          = model.title,
             description    = model.description,
+            image_url      = model.image_url,
             metadata       = model.metadata,
+            view_count     = model.view_count,
             created_at     = model.created_at.isoformat(),
             updated_at     = model.updated_at.isoformat()
         )
+
+
+class ReviewDTO(BaseModel):
+    review_id: str
+    observatory_id: str
+    user_id: str
+    content: str
+    rating: int
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: M.Review) -> 'ReviewDTO':
+        return ReviewDTO(
+            review_id      = m.review_id,
+            observatory_id = m.observatory_id,
+            user_id        = m.user_id,
+            content        = m.content,
+            rating         = m.rating,
+            created_at     = m.created_at.isoformat(),
+            updated_at     = m.updated_at.isoformat(),
+        )
+
+
+class CreateReviewDTO(BaseModel):
+    content: str
+    rating: int = Field(..., ge=1, le=5)
+
+
+class UpdateReviewDTO(BaseModel):
+    content: Optional[str] = None
+    rating: Optional[int] = Field(default=None, ge=1, le=5)
 
 class CatalogXDTO(BaseModel):
     catalog_id: str
@@ -286,6 +321,7 @@ class CreateNotificationDTO(BaseModel):
     entity_id: Optional[str] = Field(default=None, description="ID of the related entity, e.g., observatory_id or product_id")
 
 class CreateTaskDTO(BaseModel):
+    task_id: Optional[str] = Field(default=None, description="Custom ID for the task; auto-generated if omitted.")
     user_id: str
     observatory_id: str
     title: str
@@ -894,15 +930,16 @@ class ServiceCreateDTO(BaseModel):
     owner_id: str    = Field(..., description="User ID of the service owner.")
     description: Optional[str] = Field(default="")
     public: bool               = Field(default=False, description="Publicly discoverable via SVC(*) queries.")
+    provider: ENUMS.ServiceProviderEnum = Field(default=ENUMS.ServiceProviderEnum.OTHER, description="Who provides this service (e.g. INTERNAL, EXTERNAL_API, or THIRD_PARTY).")
     workflow_id: Optional[str] = Field(default=None, description="Reference to an existing workflow.")
 
 
 class ServiceUpdateDTO(BaseModel):
-    name: Optional[str]        = None
-    description: Optional[str] = None
-    public: Optional[bool]     = None
-    workflow_id: Optional[str] = None
-
+    name: Optional[str]        = Field(default=None, description="Updated service name.")
+    description: Optional[str] = Field(default=None, description="Updated service description.")
+    public: Optional[bool]     = Field(default=None, description="Whether this service should be publicly discoverable via SVC(*) queries.")
+    workflow_id: Optional[str] = Field(default=None, description="Updated reference to an existing workflow.")
+    provider: Optional[ENUMS.ServiceProviderEnum] = Field(default=None, description="Updated provider of this service (e.g. INTERNAL, EXTERNAL_API, or THIRD_PARTY).")
 
 class ServiceDTO(BaseModel):
     service_id: str
@@ -910,6 +947,7 @@ class ServiceDTO(BaseModel):
     description: str
     owner_id: str
     public: bool
+    provider: str
     workflow_id: Optional[str]
     created_at: str
     updated_at: str
@@ -922,6 +960,7 @@ class ServiceDTO(BaseModel):
             description = m.description or "",
             owner_id    = m.owner_id,
             public      = m.public,
+            provider    = m.provider,
             workflow_id = m.workflow_id,
             created_at  = m.created_at.isoformat(),
             updated_at  = m.updated_at.isoformat(),
@@ -1006,6 +1045,7 @@ class ServiceDetailDTO(BaseModel):
     description: str
     owner_id: str
     public: bool
+    provider: str
     workflow: Optional[WorkflowDetailDTO] = None
     created_at: str
     updated_at: str
@@ -1018,6 +1058,7 @@ class ServiceDetailDTO(BaseModel):
             description = m.description or "",
             owner_id    = m.owner_id,
             public      = m.public,
+            provider    = m.provider,
             workflow    = workflow,
             created_at  = m.created_at.isoformat(),
             updated_at  = m.updated_at.isoformat(),
@@ -1088,6 +1129,7 @@ class ServiceIndexDTO(BaseModel):
     workflow_id: Optional[str] = Field(
         default=None, description="Reference an existing workflow by ID."
     )
+    provider: ENUMS.ServiceProviderEnum = Field(default=ENUMS.ServiceProviderEnum.OTHER, description="Service provider type.")
 
 
 class ServiceIndexResponseDTO(BaseModel):

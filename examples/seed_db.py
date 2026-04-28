@@ -867,8 +867,7 @@ async def seed(mongo_uri: str, db_name: str, clean: bool) -> None:
             print(f"  🗑  dropped {col}")
 
     print("\n─── Step 1: Build catalogs ───────────────────────────────────────")
-    acc = CatalogAccumulator()
-
+    acc                          = CatalogAccumulator()
     spatial_cat_id,  state_ids   = build_spatial(acc)
     temporal_cat_id, year_ids    = build_temporal(acc)
     sex_cat_id,      sex_ids     = build_sex(acc)

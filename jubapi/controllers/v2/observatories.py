@@ -3,7 +3,6 @@ from typing import List
 from fastapi import Depends, Query, status
 from fastapi.routing import APIRouter
 from nanoid import generate as nanoid
-
 import jubapi.services.v2 as S
 import jubapi.middlewares as MX
 import jubapi.models.v2 as M
@@ -45,6 +44,7 @@ async def setup_observatory(
         raise obs_result.unwrap_err().to_http_exception()
 
     task_result = await task_svc.create_task(DTO.CreateTaskDTO(
+        task_id        = obs_id,
         user_id        = payload.user_id,
         observatory_id = obs_id,
         title          = f"Setup: {payload.title}",
@@ -366,5 +366,70 @@ async def unlink_product(
         raise check.unwrap_err().to_http_exception()
 
     result = await svc.unlink_product(observatory_id, product_id)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+
+
+# ==========================================
+# VIEWS & REVIEWS
+# ==========================================
+
+@router.post("/{observatory_id}/view", status_code=status.HTTP_200_OK)
+async def increment_view(
+    observatory_id: str,
+    svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
+):
+    result = await svc.increment_views(observatory_id)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    return {"observatory_id": observatory_id, "view_count": result.unwrap()}
+
+
+@router.get("/{observatory_id}/reviews", response_model=List[DTO.ReviewDTO])
+async def list_reviews(
+    observatory_id: str,
+    svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
+):
+    result = await svc.get_reviews(observatory_id)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    return result.unwrap()
+
+
+@router.post("/{observatory_id}/reviews", status_code=status.HTTP_201_CREATED, response_model=DTO.ReviewDTO)
+async def create_review(
+    observatory_id: str,
+    payload: DTO.CreateReviewDTO,
+    current_user: DTO.UserProfileDTO = Depends(MX.get_current_user),
+    svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
+):
+    result = await svc.create_review(observatory_id, current_user.user_id, payload)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    return result.unwrap()
+
+
+@router.put("/{observatory_id}/reviews/{review_id}", response_model=DTO.ReviewDTO)
+async def update_review(
+    observatory_id: str,
+    review_id: str,
+    payload: DTO.UpdateReviewDTO,
+    current_user: DTO.UserProfileDTO = Depends(MX.get_current_user),
+    svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
+):
+    result = await svc.update_review(review_id, current_user.user_id, payload)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    return result.unwrap()
+
+
+@router.delete("/{observatory_id}/reviews/{review_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_review(
+    observatory_id: str,
+    review_id: str,
+    current_user: DTO.UserProfileDTO = Depends(MX.get_current_user),
+    svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
+):
+    result = await svc.delete_review(review_id, current_user.user_id)
     if result.is_err:
         raise result.unwrap_err().to_http_exception()

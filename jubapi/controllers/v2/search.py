@@ -116,6 +116,7 @@ async def search_observatories(query:DTO.SearchQueryDTO, search:S.SearchService 
         raise e.to_http_exception()
 
     response = result.unwrap()
+    
 
     return response
 

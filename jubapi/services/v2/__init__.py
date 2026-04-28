@@ -486,16 +486,18 @@ class GraphLinkManager:
     
 class ObservatoriesService:
     def __init__(
-        self, 
-        observatory_repository: R.ObservatoriesRepository, 
+        self,
+        observatory_repository: R.ObservatoriesRepository,
         observatory_product_link_repository: R.ObservatoryToProductLinkRepository,
         product_repository: R.ProductsRepository,
-        graph_link_manager: GraphLinkManager
+        graph_link_manager: GraphLinkManager,
+        review_repository: R.ReviewRepository,
     ):
         self.observatory_repository = observatory_repository
         self.observatory_product_link_repository = observatory_product_link_repository
         self.product_repository = product_repository
         self.graph_link_manager = graph_link_manager
+        self.review_repository = review_repository
 
     # --- Create ---
 
@@ -595,6 +597,60 @@ class ObservatoriesService:
 
     async def unlink_product(self, observatory_id: str, product_id: str) -> Result[bool, EX.JubError]:
         return await self.graph_link_manager.unlink_observatory_from_product(observatory_id, product_id)
+
+    # --- Views ---
+
+    async def increment_views(self, observatory_id: str) -> Result[int, EX.JubError]:
+        return await self.observatory_repository.increment_views(observatory_id)
+
+    # --- Reviews ---
+
+    async def get_reviews(self, observatory_id: str) -> Result[List[DTO.ReviewDTO], EX.JubError]:
+        result = await self.review_repository.get_by_observatory(observatory_id)
+        if result.is_err:
+            return result
+        return Ok([DTO.ReviewDTO.from_model(r) for r in result.unwrap()])
+
+    async def create_review(self, observatory_id: str, user_id: str, dto: DTO.CreateReviewDTO) -> Result[DTO.ReviewDTO, EX.JubError]:
+        existing = await self.review_repository.get_by_user_and_observatory(user_id, observatory_id)
+        if existing.is_ok and existing.unwrap() is not None:
+            return Err(EX.AlreadyExists("You have already reviewed this observatory."))
+        now = DT.datetime.now(DT.timezone.utc)
+        review = M.Review(
+            review_id      = f"rev_{uuid.uuid4().hex[:12]}",
+            observatory_id = observatory_id,
+            user_id        = user_id,
+            content        = dto.content,
+            rating         = dto.rating,
+            created_at     = now,
+            updated_at     = now,
+        )
+        result = await self.review_repository.insert(review)
+        if result.is_err:
+            return result
+        return Ok(DTO.ReviewDTO.from_model(review))
+
+    async def update_review(self, review_id: str, user_id: str, dto: DTO.UpdateReviewDTO) -> Result[DTO.ReviewDTO, EX.JubError]:
+        result = await self.review_repository.get_by_id(review_id)
+        if result.is_err:
+            return Err(EX.NotFound(f"Review '{review_id}' not found."))
+        review = result.unwrap()
+        if review.user_id != user_id:
+            return Err(EX.AuthorizationError("You are not authorized to edit this review."))
+        patch = {k: v for k, v in dto.model_dump().items() if v is not None}
+        patch["updated_at"] = DT.datetime.now(DT.timezone.utc)
+        updated = await self.review_repository.update(review_id, patch)
+        if updated.is_err:
+            return updated
+        return Ok(DTO.ReviewDTO.from_model(updated.unwrap()))
+
+    async def delete_review(self, review_id: str, user_id: str) -> Result[bool, EX.JubError]:
+        result = await self.review_repository.get_by_id(review_id)
+        if result.is_err:
+            return Err(EX.NotFound(f"Review '{review_id}' not found."))
+        if result.unwrap().user_id != user_id:
+            return Err(EX.AuthorizationError("You are not authorized to delete this review."))
+        return await self.review_repository.delete(review_id)
 
     # --- Delete ---
 
@@ -1247,7 +1303,7 @@ class SearchService:
                 result = result & s
             return result
 
-    async def search_observatories(self, query: str) -> Result[DTO.ObservatoryXDTO, EX.JubError]:
+    async def search_observatories(self, query: str) -> Result[List[DTO.ObservatoryXDTO], EX.JubError]:
         """
         Finds observatories by walking: DSL condition → catalog items (+ aliases)
         → products → observatories. Only observatories with at least one matching
@@ -1332,7 +1388,7 @@ class SearchService:
                     if not valid_product_ids:
                         return Ok([])
 
-                obs_ids: set = set()
+                obs_ids: Set[str] = set()
                 for product_id in valid_product_ids:
                     ids = await self.observatory_product_link_repository.get_observatory_ids_by_product_id(product_id)
                     obs_ids.update(ids)
@@ -1341,8 +1397,18 @@ class SearchService:
                 return Ok([])
 
             observatory_tasks = [self.observatory_repository.get_by_id(obs_id) for obs_id in obs_ids]
+            # observatory_tasks = [self.observatory_repository.find({"observatory_id": obs_id,"is_disabled":False}) for obs_id in obs_ids]
+            print(observatory_tasks)
             raw_observatories = await asyncio.gather(*observatory_tasks)
-            dtos = [DTO.ObservatoryXDTO.from_model(obs.unwrap()) for obs in raw_observatories if obs.is_ok]
+            # dtos = [DTO.ObservatoryXDTO.from_model(obs.unwrap()) for obs in raw_observatories if obs.is_ok]
+            dtos = []
+            for obs in raw_observatories:
+                if obs.is_ok:
+                    model = obs.unwrap()
+                    if not model.is_disabled:
+                        dtos.append(DTO.ObservatoryXDTO.from_model(model))
+                else:
+                    L.warning(f"Failed to fetch observatory details for one of the results: {obs.unwrap_err()}")
             return Ok(dtos)
         except Exception as e:
             L.error({"message": "Error during observatory search", "error": str(e), "query": query})
@@ -2406,7 +2472,7 @@ class TasksService:
         )
         
         new_task = M.TaskX(
-            task_id          = f"tsk_{uuid.uuid4().hex[:12]}",
+            task_id          = dto.task_id if dto.task_id is not None else f"tsk_{uuid.uuid4().hex[:12]}",
             user_id          = dto.user_id,
             observatory_id   = dto.observatory_id,
             title            = dto.title,
@@ -2749,6 +2815,7 @@ class ServiceXService:
             owner_id    = dto.owner_id,
             public      = dto.public,
             workflow_id = dto.workflow_id,
+            provider    = dto.provider or ENUMS.ServiceProviderEnum.OTHER
         )
         res = await self.repo.insert(model)
         if res.is_err:
@@ -2922,6 +2989,7 @@ class ServiceXService:
             owner_id    = dto.owner_id,
             public      = dto.public,
             workflow_id = workflow_id,
+            provider    = dto.provider
         )
         res = await self.repo.insert(svc_model)
         if res.is_err:

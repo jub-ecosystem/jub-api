@@ -26,10 +26,6 @@ def get_xolo_client() -> XoloClient:
     return XoloClient(
         api_url=Cfg.JUB_XOLO_API_URL,
         secret=Cfg.JUB_XOLO_SECRET,
-        # hostname = Cfg.JUB_XOLO_HOSTNAME,
-        # port     = Cfg.JUB_XOLO_PORT,
-        # secret   = Cfg.JUB_XOLO_SECRET,
-        # version  = Cfg.JUB_XOLO_VERSION
     )
 
 
@@ -126,11 +122,13 @@ def get_observatories_service(graph_link_manager: S.GraphLinkManager=Depends(get
     observatory_to_product_link_collection = get_collection(DC.CollectionNames.OBSERVATORY_PRODUCT_LINKS.value)
     product_repository                     = R.ProductsRepository(products_collection)
     observatory_product_link_repository    = R.ObservatoryToProductLinkRepository(observatory_to_product_link_collection)
+    review_repository                      = R.ReviewRepository(get_collection(DC.CollectionNames.OBSERVATORY_REVIEWS.value))
     service                                = S.ObservatoriesService(
         graph_link_manager                  = graph_link_manager,
         observatory_repository              = repository,
         observatory_product_link_repository = observatory_product_link_repository,
         product_repository                  = product_repository,
+        review_repository                   = review_repository,
     )
     return service
 

@@ -4,7 +4,7 @@ from jubapi.repositories.v2.base import BaseRepository
 from motor.motor_asyncio import AsyncIOMotorCollection as Collection
 import datetime as DT
 import jubapi.models.v2 as M
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional,Set
 from option import Result,Err,Ok
 import jubapi.errors as EX
 from jubapi.log.log import Log
@@ -20,6 +20,19 @@ L = Log(
 class ObservatoriesRepository(BaseRepository[M.ObservatoryX]):
     def __init__(self, collection: Collection):
         super().__init__(collection, M.ObservatoryX, "observatory_id")
+
+    async def increment_views(self, observatory_id: str) -> Result[int, EX.JubError]:
+        try:
+            result = await self.collection.find_one_and_update(
+                {"observatory_id": observatory_id},
+                {"$inc": {"view_count": 1}},
+                return_document=True,
+            )
+            if result is None:
+                return Err(EX.NotFound(f"Observatory '{observatory_id}' not found."))
+            return Ok(result.get("view_count", 0))
+        except Exception as e:
+            return Err(EX.UnknownError(str(e)))
 
 class ProductsRepository(BaseRepository[M.ProductX]):
     def __init__(self, collection: Collection):
@@ -112,6 +125,21 @@ class CatalogItemAliasesRepository(BaseRepository[M.CatalogItemAlias]):
 
 
 # 1. Observatory <-> Product
+class ReviewRepository(BaseRepository[M.Review]):
+    def __init__(self, collection: Collection):
+        super().__init__(collection, M.Review, "review_id")
+
+    async def get_by_observatory(self, observatory_id: str) -> Result[List[M.Review], EX.JubError]:
+        return await self.find({"observatory_id": observatory_id})
+
+    async def get_by_user_and_observatory(self, user_id: str, observatory_id: str) -> Result[Optional[M.Review], EX.JubError]:
+        try:
+            doc = await self.collection.find_one({"user_id": user_id, "observatory_id": observatory_id})
+            return Ok(M.Review.model_validate(doc) if doc else None)
+        except Exception as e:
+            return Err(EX.UnknownError(str(e)))
+
+
 class ObservatoryToProductLinkRepository(BaseRepository[M.ObservatoryToProductLink]):
     def __init__(self, collection: Collection):
         super().__init__(collection, M.ObservatoryToProductLink, "observatory_id")
@@ -121,7 +149,7 @@ class ObservatoryToProductLinkRepository(BaseRepository[M.ObservatoryToProductLi
         docs = await cursor.to_list(length=None)
         return [d["observatory_id"] for d in docs if d.get("observatory_id")]
 
-    async def get_all_observatory_ids_with_products(self) -> set:
+    async def get_all_observatory_ids_with_products(self) -> Set[str]:
         cursor = self.collection.find({}, {"observatory_id": 1, "_id": 0})
         docs = await cursor.to_list(length=None)
         return {d["observatory_id"] for d in docs if d.get("observatory_id")}

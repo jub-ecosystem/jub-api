@@ -36,6 +36,7 @@ class ObservatoryX(Descriptable):
   title: str
   image_url: Optional[str] = None
   is_disabled: bool = Field(default=False)
+  view_count: int = Field(default=0)
   @staticmethod
   def from_doc(doc: Dict) -> 'ObservatoryX':
     return ObservatoryX(
@@ -44,6 +45,7 @@ class ObservatoryX(Descriptable):
         description    = doc.get('description', ''),
         metadata       = doc.get('metadata', {}),
         is_disabled    = doc.get('is_disabled', False),
+        view_count     = doc.get('view_count', 0),
         created_at     = doc.get('created_at', DT.datetime.now(DT.timezone.utc)),
         updated_at     = doc.get('updated_at', DT.datetime.now(DT.timezone.utc))
     )
@@ -338,7 +340,7 @@ class View(BaseModel):
     name: str = Field(..., description="Name of the saved view/configuration.")
     configuration: Dict[str, Any] = Field(default_factory=dict, description="UI configuration or filter state.")
 
-class Review(BaseModel):
+class Review(TimestampedModel):
     review_id: str = Field(..., description="Unique ID for the review.")
     observatory_id: str = Field(..., description="The observatory being reviewed.")
     user_id: str = Field(..., description="The user who wrote the review.")
@@ -434,9 +436,10 @@ class ServiceX(TimestampedModel):
     Top-level entity that groups a workflow under a named, ownable service.
     The `public` flag controls discoverability via the Services DSL.
     """
-    service_id: str            = Field(..., description="Primary key (nanoid).")
-    name: str                  = Field(..., description="Service name — searchable via DSL.")
-    description: Optional[str] = Field(default="", description="What this service does.")
-    owner_id: str              = Field(..., description="User ID of the service owner.")
-    public: bool               = Field(default=False, description="Whether the service is publicly discoverable.")
-    workflow_id: Optional[str] = Field(default=None, description="Reference to the WorkflowX this service executes.")
+    service_id: str                          = Field(..., description="Primary key (nanoid).")
+    name: str                                = Field(..., description="Service name — searchable via DSL.")
+    description: Optional[str]              = Field(default="", description="What this service does.")
+    owner_id: str                            = Field(..., description="User ID of the service owner.")
+    public: bool                             = Field(default=False, description="Whether the service is publicly discoverable.")
+    provider: ENUMS.ServiceProviderEnum      = Field(default=ENUMS.ServiceProviderEnum.OTHER, description="Platform or ecosystem this service belongs to.")
+    workflow_id: Optional[str]              = Field(default=None, description="Reference to the WorkflowX this service executes.")

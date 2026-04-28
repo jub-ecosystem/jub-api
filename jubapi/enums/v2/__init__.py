@@ -83,6 +83,12 @@ class CatalogItemValueType(str, Enum):
     BOOLEAN  = "BOOLEAN"
     DATETIME = "DATETIME"
 
+class ServiceProviderEnum(str, Enum):
+    XELHUA   = "XELHUA"
+    NEZ      = "NEZ"
+    EXTERNAL = "EXTERNAL"
+    OTHER    = "OTHER"
+
 class CatalogType(str, Enum):
     INTEREST   = "INTEREST"
     TEMPORAL   = "TEMPORAL"
