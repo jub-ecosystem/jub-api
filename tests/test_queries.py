@@ -52,7 +52,7 @@ async def services(test_db):
         data_records_repository                    = R.DataRecordsRepository(test_db[CollectionNames.DATA_RECORDS.value]),
     )
     review_repository = R.ReviewRepository(
-        test_db[CollectionNames.OBSERVATORY_REVIEW.value]
+        test_db[CollectionNames.OBSERVATORY_REVIEWS.value]
     )
     # 3. Services
     return {

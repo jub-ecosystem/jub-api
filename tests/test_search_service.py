@@ -46,7 +46,7 @@ async def services(test_db):
 
     # 3. Services
     review_repository = R.ReviewRepository(
-        test_db[CollectionNames.OBSERVATORY_REVIEW.value]
+        test_db[CollectionNames.OBSERVATORY_REVIEWS.value]
     )
     return {
         "catalog": S.CatalogService(catalog_repository, catalog_item_repository, catalog_item_alias_repository, link_manager),
