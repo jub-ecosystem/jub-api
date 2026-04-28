@@ -45,6 +45,9 @@ async def services(test_db):
     )
 
     # 3. Services
+    review_repository = R.ReviewRepository(
+        test_db[CollectionNames.OBSERVATORY_REVIEW.value]
+    )
     return {
         "catalog": S.CatalogService(catalog_repository, catalog_item_repository, catalog_item_alias_repository, link_manager),
         "product": S.ProductService(product_repository, link_manager),
@@ -52,7 +55,8 @@ async def services(test_db):
             observatory_product_link_repository = link_manager.observatory_product_link_repository,
             observatory_repository              = observatory_repository,
             product_repository                  = product_repository,
-            graph_link_manager                  = link_manager
+            graph_link_manager                  = link_manager,
+            review_repository=                  review_repository  
         ),
         "search": search_service,
         "db": test_db # Passed for direct assertions
