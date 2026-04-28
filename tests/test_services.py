@@ -47,7 +47,8 @@ async def services(test_db):
             observatory_product_link_repository = link_manager.observatory_product_link_repository,
             observatory_repository              = observatory_repository,
             product_repository                  = product_repository,
-            graph_link_manager                  = link_manager
+            graph_link_manager                  = link_manager,
+            review_repository=                  R.ReviewRepository(test_db[CollectionNames.OBSERVATORY_REVIEWS.value]
         ),
         "search": search_service,
         "db": test_db # Passed for direct assertions
