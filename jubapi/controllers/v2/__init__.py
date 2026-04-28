@@ -1,4 +1,17 @@
-from jubapi.controllers.v2.observatory import router as observatory_router_v2
-from jubapi.controllers.v2.xvariable import router as xvariable_router
-from jubapi.controllers.v2.nameservice import router as nameservice_router
-from jubapi.controllers.v2.products import router as product_router_v2
+from jubapi.controllers.v2.observatories import router as observatories
+from jubapi.controllers.v2.search import router as search
+from jubapi.controllers.v2.catalogs import router as catalogs
+from jubapi.controllers.v2.catalogs_items import router as catalog_items
+from jubapi.controllers.v2.jub import router as jub
+from jubapi.controllers.v2.users import router as users
+from jubapi.controllers.v2.notifications import router as notifications
+from jubapi.controllers.v2.tasks import router as tasks
+from jubapi.controllers.v2.datasources import router as datasources
+from jubapi.controllers.v2.products import router as products
+from jubapi.controllers.v2.services import (
+    bb_router as building_blocks,
+    pattern_router as patterns,
+    stage_router as stages,
+    workflow_router as workflows,
+    service_router as services,
+)

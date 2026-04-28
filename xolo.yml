@@ -28,15 +28,12 @@ services:
 # XOLO API Service
 # =============================
  xolo:
-  image: nachocode/xolo:api-0.0.11a0
+  image: nachocode/xolo:api-0.0.11a2
   env_file:
     - .env.dev
-  # environment:
   ports:
     - ${XOLO_PORT:-10000}:${XOLO_PORT:-10000}
   volumes:
-    # - /log:/log
-    # - /mictlanx/xolo:/mictlanx/xolo
     - xolo-data:/xolo
   networks:
     - xolo-net

@@ -13,3 +13,8 @@ log/
 .venv
 site/
 run_actions.sh
+logs/
+CLAUDE.md
+.claude
+.cache
+mkdocs.yml

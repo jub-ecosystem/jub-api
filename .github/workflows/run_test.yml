@@ -65,13 +65,22 @@ jobs:
           chmod +x deploy.sh && ./deploy.sh ${{ env.JUB_DEPLOY_ENV_FILE_PATH || '.env.dev' }}
         env:
           JUB_ENV_FILE_PATH: ${{ env.ACT == 'true' && env.JUB_DEPLOY_ENV_FILE_PATH || '.env.dev' }}
-
+      - name: List running containers
+        run: docker ps -a
       - name: Lint with Ruff  
         run: |  
           pip install ruff  
           ruff check .  
         continue-on-error: true  
-        
+      - name: Create scope for tests
+        run: |
+          chmod +x create_scope.sh
+          for i in 1 2 3 4 5; do
+            ./create_scope.sh && exit 0
+            echo "create scope attemp $i"
+            sleep $((i*5))
+          done
+        shell: bash
       - name: Test with pytest  
         run: |  
           poetry run coverage run -m pytest tests/ --ignore=tests/deprecated -v -s

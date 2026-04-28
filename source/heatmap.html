@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JUB — Heatmap Chart Template</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; }
+    header { padding: 1.5rem 2rem; background: #1e293b; border-bottom: 1px solid #334155; }
+    header h1 { font-size: 1.25rem; font-weight: 600; color: #38bdf8; }
+    header p  { font-size: 0.85rem; color: #94a3b8; margin-top: 0.25rem; }
+    #chart    { width: 100%; height: calc(100vh - 80px); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Distribución Geográfica — Heatmap</h1>
+    <p>Visualización de intensidad por entidad federativa · JUB Product Viewer</p>
+  </header>
+  <div id="chart"></div>
+
+  <script>
+    const chart = echarts.init(document.getElementById('chart'));
+
+    // Placeholder states and synthetic values — replace with real API data.
+    const states = [
+      'AGS','BC','BCS','CAM','COAH','COL','CHIS','CHIH','CDMX','DGO',
+      'GTO','GRO','HGO','JAL','MEX','MICH','MOR','NAY','NL','OAX',
+      'PUE','QRO','QROO','SLP','SIN','SON','TAB','TAMS','TLAX','VER','YUC','ZAC'
+    ];
+    const years  = ['2015','2016','2017','2018','2019','2020','2021','2022','2023'];
+
+    // Synthetic heatmap data [year_idx, state_idx, value]
+    const data = [];
+    states.forEach((_, si) => {
+      years.forEach((_, yi) => {
+        data.push([yi, si, Math.round(Math.random() * 300 + 20)]);
+      });
+    });
+
+    chart.setOption({
+      backgroundColor: '#0f172a',
+      tooltip: { position: 'top', formatter: p => `${states[p.data[1]]} · ${years[p.data[0]]}<br/>Value: <b>${p.data[2]}</b>` },
+      grid: { top: '5%', left: '80px', right: '5%', bottom: '80px' },
+      xAxis: {
+        type: 'category', data: years,
+        axisLine: { lineStyle: { color: '#475569' } },
+        axisLabel: { color: '#94a3b8' },
+      },
+      yAxis: {
+        type: 'category', data: states,
+        axisLine: { lineStyle: { color: '#475569' } },
+        axisLabel: { color: '#94a3b8', fontSize: 10 },
+      },
+      visualMap: {
+        min: 0, max: 320,
+        calculable: true,
+        orient: 'horizontal',
+        left: 'center', bottom: 10,
+        inRange: { color: ['#0c4a6e', '#0ea5e9', '#38bdf8', '#7dd3fc', '#e0f2fe'] },
+        textStyle: { color: '#94a3b8' },
+      },
+      series: [{
+        name: 'Valor',
+        type: 'heatmap',
+        data,
+        label: { show: false },
+        emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(56,189,248,0.5)' } },
+      }],
+    });
+
+    window.addEventListener('resize', () => chart.resize());
+  </script>
+</body>
+</html>

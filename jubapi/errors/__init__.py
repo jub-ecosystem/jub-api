@@ -1,19 +1,147 @@
 from typing import Any, Dict
-from typing_extensions import Annotated, Doc
 from fastapi import HTTPException
 
-class OcaError(HTTPException):
-    def __init__(self, status_code: int, detail: Any = None, headers: Dict[str, str]  = None) -> None:
+class JubError(Exception):
+    """
+    Base exception class for the Jub API.
+
+    Attributes:
+        status_code (int): The HTTP status code associated with the error.
+        detail (Any): Additional details or message regarding the error.
+        metadata (Dict[str, str]): Optional headers or metadata to include in the response.
+    """
+    def __init__(self, status_code: int, detail: Any = None, metadata: Dict[str, str]  = None) -> None:
+        """
+        Initializes the base JubError.
+
+        Args:
+            status_code (int): The HTTP status code to return.
+            detail (Any, optional): The error message or details. Defaults to None.
+            metadata (Dict[str, str], optional): Additional HTTP headers. Defaults to None.
+        """
+        self.status_code = status_code
+        self.detail = detail
+        self.metadata = metadata
+        # super().__init__(status_code, detail, headers)
+    
+    @staticmethod
+    def from_exception(exc: Exception) -> 'JubError':
+        
+        """
+        Converts any exception into a JubError with a 500 status code.
+        
+        Args:
+            exc (Exception): The original exception caught by the application.
+
+        Returns:
+            JubError: A new instance of JubError wrapping the original exception.
+        """
+        return JubError(status_code=500, detail=str(exc))
+
+    # @staticmethod
+    def to_http_exception(self) -> HTTPException:
+        """
+        Converts a JubError into a FastAPI HTTPException.
+        
+        Args:
+            jub_error (JubError): The JubError instance to convert.
+
+        Returns:
+            HTTPException: The corresponding FastAPI HTTP exception.
+        """
+        return HTTPException(status_code=self.status_code, detail=self.detail, headers=self.metadata)
+
+class ValidationError(JubError):
+    """Represents a validation error (HTTP 422)."""
+    def __init__(self,detail: Any = None, headers: Dict[str, str]  = None) -> None:
+        """
+        Initializes the ValidationError.
+
+        Args:
+            detail (Any, optional): The error message or details. Defaults to None.
+            headers (Dict[str, str], optional): Additional HTTP headers. Defaults to None.
+        """
+        super().__init__(422, detail, headers)
+class ForbiddenError(JubError):
+    """Represents a forbidden access error (HTTP 403)."""
+    def __init__(self,detail: Any = None, headers: Dict[str, str]  = None) -> None:
+        """
+        Initializes the ForbiddenError.
+
+        Args:
+            detail (Any, optional): The error message or details. Defaults to None.
+            headers (Dict[str, str], optional): Additional HTTP headers. Defaults to None.
+        """
+        super().__init__(403, detail, headers)
+class UnknownError(JubError):
+    """Represents an unknown or internal server error (HTTP 500)."""
+    def __init__(self,detail: Any = None, headers: Dict[str, str]  = None,status_code: int = 500) -> None:
+        """
+        Initializes the UnknownError.
+
+        Args:
+            detail (Any, optional): The error message or details. Defaults to None.
+            headers (Dict[str, str], optional): Additional HTTP headers. Defaults to None.
+        """
         super().__init__(status_code, detail, headers)
 
-class UknownError(OcaError):
+class NotFound(JubError):
+    """Represents a resource not found error (HTTP 404)."""
     def __init__(self,detail: Any = None, headers: Dict[str, str]  = None) -> None:
-        super().__init__(500, detail, headers)
+        """
+        Initializes the NotFound error.
 
-class NotFound(OcaError):
-    def __init__(self,detail: Any = None, headers: Dict[str, str]  = None) -> None:
+        Args:
+            detail (Any, optional): The error message or details. Defaults to None.
+            headers (Dict[str, str], optional): Additional HTTP headers. Defaults to None.
+        """
         super().__init__(404, detail, headers)
 
-class AlreadyExists(OcaError):
+class CreationError(JubError):
+    """Represents an error that occurs during resource creation (HTTP 400)."""
+    def __init__(self,detail: Any = None, headers: Dict[str, str]  = None) -> None:
+        """
+        Initializes the CreationError.
+
+        Args:
+            detail (Any, optional): The error message or details. Defaults to None.
+            headers (Dict[str, str], optional): Additional HTTP headers. Defaults to None.
+        """
+        super().__init__(400, detail, headers)
+        
+
+class AlreadyExists(JubError):
+    """Represents a conflict error where a resource already exists (HTTP 403)."""
     def __init__(self,detail: Any = None, headers: Dict[str, str] = None) -> None:
+        """
+        Initializes the AlreadyExists error.
+
+        Args:
+            detail (Any, optional): The error message or details. Defaults to None.
+            headers (Dict[str, str], optional): Additional HTTP headers. Defaults to None.
+        """
+        super().__init__(403, detail, headers)
+
+class InvalidCredentialsError(JubError):
+    """Represents an authentication error due to invalid credentials (HTTP 401)."""
+    def __init__(self,detail: Any = None, headers: Dict[str, str] = None) -> None:
+        """
+        Initializes the InvalidCredentialsError.
+
+        Args:
+            detail (Any, optional): The error message or details. Defaults to None.
+            headers (Dict[str, str], optional): Additional HTTP headers. Defaults to None.
+        """
+        super().__init__(401, detail, headers)
+
+class AuthorizationError(JubError):
+    """Represents an authorization error where the user lacks permissions (HTTP 403)."""
+    def __init__(self,detail: Any = None, headers: Dict[str, str] = None) -> None:
+        """
+        Initializes the AuthorizationError.
+
+        Args:
+            detail (Any, optional): The error message or details. Defaults to None.
+            headers (Dict[str, str], optional): Additional HTTP headers. Defaults to None.
+        """
         super().__init__(403, detail, headers)

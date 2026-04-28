@@ -1,226 +1,1169 @@
-from typing import Optional,List,Tuple, Any,Generator,Dict
-from pydantic import BaseModel
-from jubapi.models.v2 import XVariableModel,XVariableType,XType
-# import jubapi.querylang.peg as qlx
-import json as J
-import hashlib as H
+from pydantic import BaseModel,Field
+from typing import Optional,List,Dict
+import jubapi.models.v2 as M
+import jubapi.enums.v2 as ENUMS
+import datetime as DT
+# from jubapi.models.v2 import ObservatoryX,CatalogX
 
-class ObservatoryDTO(BaseModel):
-    obid: str
+class TasksStatsDTO(BaseModel):
+    pending: int = Field(default=0, description="Number of tasks currently pending")
+    running: int = Field(default=0, description="Number of tasks currently running")
+    success: int = Field(default=0, description="Number of tasks completed successfully")
+    failed: int = Field(default=0, description="Number of tasks that have failed")
+
+class TaskXDTO(BaseModel):
+    task_id: str
+    user_id: str
+    observatory_id: str
     title: str
-    description: Optional[str]=""
-    image: Optional[str]="https://static.vecteezy.com/system/resources/thumbnails/004/141/669/small/no-photo-or-blank-image-icon-loading-images-or-missing-image-mark-image-not-available-or-image-coming-soon-sign-simple-nature-silhouette-in-frame-isolated-illustration-vector.jpg"
-class XVariableAssignmentDTO(BaseModel):
-    xid:str
-    xvid:str
-
-class XVariableDTO(BaseModel):
-    xvid: Optional[str] = ""
-    description:Optional[str]="No description yet."
-    type: str
-    xtype:Optional[XType] = XType.X
-    variable_type:Optional[XVariableType] = None
-    raw: Optional[str] =""
-    order: Optional[int] = -1 
-    value: Any
-    
-    def build(self):
-        try:
-            hasher          = H.sha256()
-            self.type = self.type.upper()
-            
-            hasher.update(self.type.encode("utf-8"))
-            if self.xtype == XType.String or self.xtype == XType.Float or self.xtype == XType.Integer or self.xtype == XType.X:
-                if self.xtype == XType.String:
-                    self.value = self.value.upper()
-
-                xbytes         = f"{self.value}".encode("utf8")
-                self.raw=f"{self.type}({self.value})"
-                hasher.update(xbytes)
-            elif self.xtype == XType.Array:
-                str_xs = list(map(lambda x: str(x).upper(), self.value))
-                self.value = str_xs
-                xs = "".join(str_xs)
-                
-                self.raw= f"{self.type}({str(str_xs) })"
-                hasher.update(xs.encode("utf-8"))
-
-            elif self.xtype == XType.Date:
-                date_str = self.value.isoformat()
-                self.raw = f"{self.type}({self.value.month},{self.value.day},{self.value.year})"
-                hasher.update(date_str.encode("utf-8"))
-            elif self.xtype == XType.DateRange:
-                _start = self.value["start"]
-                _end  = self.value["end"]
-                start_date = _start.isoformat()
-                end_date   = _end.isoformat()
-                left_open  = self.value["left_open"]
-                right_open = self.value["right_open"]
-                left       = "(" if left_open else "["
-                right      = ")" if right_open else "]"
-                x = f"{left}{start_date}{end_date}{right}"
-                self.raw = f"{left}Date({_start.month},{_start.day},{_start.year}),Date({_end.month},{_end.day},{_end.year}){right}"
-                hasher.update(x.encode("utf-8"))
-            elif self.xtype == XType.IntegerRange or self.xtype == XType.Range:
-                start = self.value["start"]
-                end   = self.value["end"]
-                step  = self.value.get("step",1)
-                left_open  = self.value["left_open"]
-                right_open = self.value["right_open"]
-                left       = "(" if left_open else "["
-                right      = ")" if right_open else "]"
-                x     = f"{left}{start}{end}{step}{right}"
-                self.raw = f"{left}{self.type}({start},{end},{step}){right}"
-                hasher.update(x.encode("utf-8"))
-            elif self.xtype == XType.Object:
-                normalized_data = J.dumps(self.value,sort_keys=True)
-                data_bytes = normalized_data.encode("utf-8")
-                hasher.update(data_bytes)
-            xvid             = hasher.hexdigest()
-            self.xvid = xvid
-        except Exception as e:
-            print(f"Error building the Xvariable, please check the format: {e}")
+    description: str
+    operation: ENUMS.TaskOperationEnum
+    current_status: ENUMS.TaskStatusEnum
+    progress_message: Optional[str] = Field(default=None, description="Optional progress message for the task")
+    created_at: str
+    updated_at: str
 
     @staticmethod
-    def from_model(x:XVariableModel)->'XVariableDTO':
-        return XVariableDTO(
-            **x.model_dump()
+    def from_model(model: M.TaskX) -> 'TaskXDTO':
+        return TaskXDTO(
+            task_id        = model.task_id,
+            user_id        = model.user_id,
+            observatory_id = model.observatory_id,
+            title          = model.title,
+            description    = model.description,
+            operation      = model.operation,
+            current_status = model.current_status,
+            progress_message  = model.progress_message,
+            created_at     = model.created_at.isoformat(),
+            updated_at     = model.updated_at.isoformat()
         )
 
-class ProductDTO(BaseModel):
-    pid: str
-    name: str
-    description: Optional[str]=""
-
-
-class TagDTO(BaseModel):
-    type: str
-    value: str
-
-class ProductFoundDTO(BaseModel):
-    pid: str
-    name: str
-    description: Optional[str]=""
-    tags:Optional[List[TagDTO]] = []
-
-
-class XVariableParentRelationshipDTO(BaseModel):
-    parent_id: str
-    child_id: str
-
- 
-class XVariableRawAssignmentDTO(BaseModel):
-    kind: str
-    value: str
-
-class MultipleXVariableAssignmentDTO(BaseModel):
-    xid: str
-    is_product: Optional[bool] = False
-    assignments: Optional[List[XVariableRawAssignmentDTO]]=[]
-
-class ManyProductsMultipleXVariableAssignmentDTO(BaseModel):
-    xid: Optional[List[str]] = []
-    is_product: Optional[bool] = False
-    assignments: Optional[List[XVariableRawAssignmentDTO]]=[]
-
-
-class XVariableInfoDTO(BaseModel):
-    type: str
-    value: str
-    # def fr
-    def calculate_hash(self):
-        h = H.sha256()
-        h.update(f"{self.type}{self.value}".encode())
-        return h.hexdigest()
-
-class XVariableMultipleInfoWithXVId(BaseModel):
-    xvid: Optional[str]=""
-    types: Optional[List[str]]=[]
-    values: Optional[List[str]] = []
-    # def fr
-    def calculate_hash(self):
-        h = H.sha256()
-        for t,v in zip(self.types,self.values):
-            h.update(f"{t}{v}".encode())
-        return h.hexdigest()
-    def to_tags(self):
-        for t,v in zip(self.types, self.values):
-            yield TagDTO(type = t, value=v)
-
-class XVariableInfoWithXVId(XVariableInfoDTO):
-    xvid:str
-    @staticmethod
-    def from_xvariableinfo(x:XVariableInfoDTO):
-        return XVariableInfoWithXVId(type= x.type, value = x.value, xvid=x.calculate_hash())
+class NotificationReadAllResponseDTO(BaseModel):
+    modified: int
+class NotificationClearReadResponseDTO(BaseModel):
+    deleted: int
     
 
-class TemporalVariableInfo(BaseModel):
-    type: str
-    xfrom: Optional[int] = 0
-    xto: Optional[int] = 0
-    value: Optional[str] =""
-    def calculate_hash(self):
-        for i in range(self.xfrom, self.xto+1):
-            h = H.sha256()
-            x = f"{self.type}{i}".encode()
-            h.update(x)
-            yield h.hexdigest()
-        xx = f"{self.type}{self.xfrom}{self.xto}".encode()
-        h = H.sha256()
-        h.update(xx)
-        yield h.hexdigest()
-class TemporalVariableInfoWithXVId(TemporalVariableInfo):
-    xvid:List[str]
+class SearchQueryDTO(BaseModel):
+    query: str
+    observatory_id: Optional[str] = Field(default=None, description="Optional observatory context for the search query")
+    limit: Optional[int] = Field(default=100, ge=1, le=1000, description="Maximum number of search results to return")
+    skip: Optional[int] = Field(default=0, ge=0, description="Number of search results to skip for pagination")
+
+class VariableMetadataDTO(BaseModel):
+    code:Optional[int] = Field(default=None, description="Optional code associated with the catalog item, if applicable")
+    name: Optional[str] = Field(default=None, description="Name of the catalog item")
+    value:Optional[str] = Field(default=None, description="Value of the catalog item")
+    description: Optional[str] = Field(default=None, description="Description of the catalog item")
+
+
+class ProductXDTO(BaseModel):
+    product_id: str
+    name: str
+    # code: Optional[int] = None
+    description: str = Field(default="", description="Description of the product")
+    tags: List[str] = Field(default_factory=list)
+    attributes:List[str] = Field(default_factory=list)
+    spatial_variable:VariableMetadataDTO = Field(default_factory=VariableMetadataDTO)
+    temporal_variable:VariableMetadataDTO = Field(default_factory=VariableMetadataDTO)
+    interest_variable:List[VariableMetadataDTO] = Field(default_factory=list)
+    # metadata: ItemMetadataDTO = Field(default_factory=ItemMetadataDTO)
+    created_at: str
+    updated_at: str
+
+
     @staticmethod
-    def from_tv_info(x:TemporalVariableInfo):
-        return TemporalVariableInfoWithXVId(type= x.type, xfrom=x.xfrom,xto=x.xto,xvid=list(x.calculate_hash()))
+    def from_model(model:M.ProductX) -> 'ProductXDTO':
+        return ProductXDTO(
+            product_id = model.product_id,
+            name       = model.name,
+            # code= model.,
+            description= model.description,
+            created_at = model.created_at.isoformat(),
+            updated_at = model.updated_at.isoformat()
+        )
+
+class ObservatoryXDTO(BaseModel):
+    observatory_id: str
+    title: str
+    description: str = Field(default="", description="Description of the observatory")
+    image_url: Optional[str] = None
+    metadata: dict = Field(default_factory=dict)
+    view_count: int = Field(default=0)
+    created_at: str
+    updated_at: str
+    @staticmethod
+    def from_model(model: M.ObservatoryX) -> 'ObservatoryXDTO':
+        return ObservatoryXDTO(
+            observatory_id = model.observatory_id,
+            title          = model.title,
+            description    = model.description,
+            image_url      = model.image_url,
+            metadata       = model.metadata,
+            view_count     = model.view_count,
+            created_at     = model.created_at.isoformat(),
+            updated_at     = model.updated_at.isoformat()
+        )
 
 
-class SVResult(BaseModel):
-    variable_type: str
-    elements: List[List[XVariableInfoDTO]]
-    # def calci
-    def calculate_hashes(self)->Generator[XVariableMultipleInfoWithXVId,None,None]:
-        for es in self.elements:
-            h = H.sha256()
-            _type = ""
-            _value = ""
-            xvi_mul = XVariableMultipleInfoWithXVId()
-            for e in es:
-                x = f"{e.type}{e.value}".encode()
-                h.update(x)
-                _type+=e.type
-                _value+=e.value
-                xvi_mul.types.append(e.type)
-                xvi_mul.values.append(e.value)
-                
-            xvi_mul. xvid=h.hexdigest()
-            yield xvi_mul
+class ReviewDTO(BaseModel):
+    review_id: str
+    observatory_id: str
+    user_id: str
+    content: str
+    rating: int
+    created_at: str
+    updated_at: str
 
-class TVResult(BaseModel):
-    variable_type: str
-    elements: Optional[List[TemporalVariableInfo]] = []
-    def calculate_hashes(self)->Generator[TemporalVariableInfoWithXVId,None,None]:
-        for e in self.elements:
-            x = TemporalVariableInfoWithXVId.from_tv_info(e)
-            yield x
+    @staticmethod
+    def from_model(m: M.Review) -> 'ReviewDTO':
+        return ReviewDTO(
+            review_id      = m.review_id,
+            observatory_id = m.observatory_id,
+            user_id        = m.user_id,
+            content        = m.content,
+            rating         = m.rating,
+            created_at     = m.created_at.isoformat(),
+            updated_at     = m.updated_at.isoformat(),
+        )
 
-class IVResult(BaseModel):
-    variable_type: str
-    elements: List[XVariableInfoDTO]
-    def calculate_hashes(self)->Generator[XVariableInfoWithXVId,None,None]:
-        for e in self.elements:
-            yield XVariableInfoWithXVId.from_xvariableinfo(e)
 
-class PTResult(BaseModel):
-    variable_type:str 
-    elements: List[XVariableInfoDTO]
-    def calculate_hashes(self)->Generator[XVariableInfoWithXVId,None,None]:
-        for e in self.elements:
-            yield XVariableInfoWithXVId.from_xvariableinfo(e)
+class CreateReviewDTO(BaseModel):
+    content: str
+    rating: int = Field(..., ge=1, le=5)
 
-class InterpretedResult(BaseModel):
-    sv: SVResult
-    tv: TVResult
-    iv: IVResult
-    pt: PTResult
+
+class UpdateReviewDTO(BaseModel):
+    content: Optional[str] = None
+    rating: Optional[int] = Field(default=None, ge=1, le=5)
+
+class CatalogXDTO(BaseModel):
+    catalog_id: str
+    root_group_id:Optional[str] = Field(default=None, description="Optional root group ID for the catalog")
+    name: str
+    value: str
+    catalog_type: str
+    parent_catalog_id: Optional[str] = Field(default=None, description="Optional parent catalog ID for hierarchical catalogs")
+    level: int = Field(default=0, description="Depth level in the catalog hierarchy, where 0 is a root catalog")
+    description: str = Field(default="", description="Description of the catalog")
+    metadata: dict = Field(default_factory=dict, description="Additional metadata for the catalog as key-value pairs")
+    created_at: str
+    updated_at: str
+    @staticmethod
+    def from_model(model: M.CatalogX) -> 'CatalogXDTO':
+        return CatalogXDTO(
+            catalog_id        = model.catalog_id,
+            name              = model.name,
+            value             = model.value,
+            description       = model.description,
+            metadata          = model.metadata,
+            catalog_type      = model.catalog_type,
+            parent_catalog_id = model.parent_catalog_id,
+            level             = model.level,
+            root_group_id     = model.root_group_id,
+            created_at        = model.created_at.isoformat(),
+            updated_at        = model.updated_at.isoformat()
+        )
+
+
+# from pydantic import BaseModel, Field
+# from typing import List, Optional
+
+# --- ALIASES & ITEMS ---
+class AliasDTO(BaseModel):
+    alias_id: str
+    value: str
+    description: str = Field(default="", description="Description of the alias")
+
+class CatalogItemDTO(BaseModel):
+    catalog_item_id: str
+    name: str
+    value: str
+    code: int
+    value_type: str
+    description: str = Field(default="", description="Description of the catalog item")
+    parent_id: Optional[str] = Field(default=None, description="ID of the parent catalog item for hierarchical relationships")
+    temporal_value: Optional[str] = Field(default=None, description="Optional temporal value for the catalog item, if applicable")
+    aliases: List[AliasDTO] = Field(default_factory=list)
+
+# --- ROOT ENTITIES ---
+class CatalogDTO(BaseModel):
+    catalog_id: str
+    value: str
+    catalog_type: str
+    name: str
+    description: str = Field(default="", description="Description of the catalog")
+    items: List[CatalogItemDTO] = Field(default_factory=list)
+
+class ObservatoryDTO(BaseModel):
+    observatory_id: str
+    title: str
+    description: str = Field(default="", description="Description of the observatory")
+    linked_catalogs: List[str] = Field(default_factory=list)
+
+class ProductDTO(BaseModel):
+    product_id: str
+    obs_id: str
+    name: str
+    description: str = Field(default="", description="Description of the product")
+    tags: List[str] = Field(default_factory=list)
+
+# --- MAIN PAYLOAD ---
+class JubFile(BaseModel):
+    catalogs: List[CatalogDTO] = Field(default_factory=list)
+    observatories: List[ObservatoryDTO] = Field(default_factory=list)
+    products: List[ProductDTO] = Field(default_factory=list)
+
+
+
+class AppearanceSettingsDTO(BaseModel):
+    theme: str = Field(default="light", description="Theme of the application, e.g., 'light' or 'dark'")
+    font_size: int = Field(default=14, description="Font size for the application interface")
+    reduce_animations: bool = Field(default=False, description="Whether to reduce animations for better performance or accessibility")
+
+class ExplorationSettingsDTO(BaseModel):
+    enable_tutorial: bool = Field(default=True, description="Whether to enable the tutorial for new users")
+    default_view: str  = Field(default="list", description="Default view for exploring content, e.g., 'list' or 'grid'")
+    items_per_page: int  = Field(default=12, description="Number of items to display per page in listings")
+
+class ExportSettingsDTO(BaseModel):
+    default_format: str = Field(default="yml", description="Default export format, e.g., 'csv', 'json' or 'yml'")
+    include_metadata: bool = Field(default=True, description="Whether to include metadata in the export")
+
+class UserPreferencesDTO(BaseModel):
+    appearance: AppearanceSettingsDTO
+    exploration: ExplorationSettingsDTO 
+    export: ExportSettingsDTO
+    def default() -> 'UserPreferencesDTO':
+        return UserPreferencesDTO(
+            appearance = AppearanceSettingsDTO(),
+            exploration = ExplorationSettingsDTO(),
+            export = ExportSettingsDTO()
+        )
+    def to_model(self) -> M.UserPreferences:
+        return M.UserPreferences(
+            appearance = M.AppearanceSettings(
+                theme=self.appearance.theme,
+                font_size=self.appearance.font_size,
+                reduce_animations=self.appearance.reduce_animations
+            ),
+            exploration = M.ExplorationSettings(
+                enable_tutorial=self.exploration.enable_tutorial,
+                default_view=self.exploration.default_view,
+                items_per_page=self.exploration.items_per_page
+            ),
+            export = M.ExportSettings(
+                default_format=self.export.default_format,
+                include_metadata=self.export.include_metadata
+            )
+        )
+    @staticmethod
+    def from_model(model: M.UserPreferences) -> 'UserPreferencesDTO':
+        return UserPreferencesDTO(
+            appearance = AppearanceSettingsDTO(
+                theme=model.appearance.theme,
+                font_size=model.appearance.font_size
+            ),
+            exploration = ExplorationSettingsDTO(
+                enable_tutorial=model.exploration.enable_tutorial,
+                default_view=model.exploration.default_view,
+                items_per_page=model.exploration.items_per_page
+            ),
+            export = ExportSettingsDTO(
+                default_format=model.export.default_format,
+                include_metadata=model.export.include_metadata
+            )
+        )
+
+    # preferences: dict = Field(default_factory=dict)
+
+class UserProfileDTO(BaseModel):
+    user_id: str
+    username: str
+    fullname: str
+    first_name: str
+    last_name: str
+    email: str
+    settings: UserPreferencesDTO = Field(default_factory=UserPreferencesDTO)
+    created_at: str
+    updated_at: str
+    is_disabled: bool = Field(default=False)
+
+
+    @staticmethod
+    def from_model(model: M.UserProfileX) -> 'UserProfileDTO':
+        return UserProfileDTO(
+            user_id    = model.user_id,
+            fullname   = f"{model.first_name} {model.last_name}",
+            first_name = model.first_name,
+            last_name  = model.last_name,
+            email      = model.email,
+            created_at = model.created_at.isoformat(),
+            updated_at = model.updated_at.isoformat(),
+            settings   = UserPreferencesDTO.from_model(model.settings),
+            username   = model.username,
+            is_disabled= model.disabled
+        )
+
+class AutenticationResponsetDTO(BaseModel):
+    access_token: str
+    temporal_secret_key: Optional[str] = Field(default=None, description="Temporal secret key for internal service-to-service authentication, if applicable")
+    user_profile: UserProfileDTO
+
+
+class CreateNotificationDTO(BaseModel):
+    user_id: str
+    status: ENUMS.NotificationStatusEnum
+    operation: ENUMS.NotificationOperationEnum
+    entity_type: ENUMS.NotificationEntityEnum
+    title: str
+    message: str
+    entity_id: Optional[str] = Field(default=None, description="ID of the related entity, e.g., observatory_id or product_id")
+
+class CreateTaskDTO(BaseModel):
+    task_id: Optional[str] = Field(default=None, description="Custom ID for the task; auto-generated if omitted.")
+    user_id: str
+    observatory_id: str
+    title: str
+    description: str
+    operation: ENUMS.TaskOperationEnum
+
+class PlotQueryDTO(BaseModel):
+    """
+    Request body for `POST /search/plot`.
+
+    Build the DSL query using these variable types:
+    - `VS(value)` — spatial filter (state, municipality, …)
+    - `VT(>= 2020)` — temporal filter
+    - `VI(C_MAMA OR C_OVARIO)` — interest/category filter
+    - `VO(AVG(TASA_100K))` — metric: AVG, SUM, or COUNT
+    - `BY(CIE10_CANCER)` — group by a catalog; produces one bar per catalog item
+
+    Example: `jub.v1.VS(MX).VI(C_MAMA OR C_OVARIO).VO(AVG(TASA_100K)).BY(CIE10_CANCER)`
+    """
+    query: str = Field(
+        ...,
+        description="Full JUB DSL string. Must start with `jub.v1.`. See PlotQueryDTO docstring for syntax reference.",
+    )
+    source_id: Optional[str] = Field(
+        default=None,
+        description="Scope results to one data source. Omit to aggregate across all sources.",
+    )
+    observatory_id: Optional[str] = Field(
+        default=None,
+        description="Informational — not used for record filtering (DataRecord has no observatory_id field).",
+    )
+    chart_type: str = Field(
+        default="bar",
+        description="ECharts series type: 'bar', 'line', or 'scatter'.",
+    )
+
+
+# 1. The Alias DTO
+class CatalogItemAliasCreateDTO(BaseModel):
+    value: str
+    value_type: ENUMS.CatalogItemValueType
+    description: Optional[str] = Field(default="", description="Description of the alias")
+
+# 2. The Item DTO (Notice it contains lists of Aliases AND Children)
+class CatalogItemCreateDTO(BaseModel):
+    name: str
+    value: str # Will be validated to UpperSnakeStr in your actual model
+    code: int
+    value_type: ENUMS.CatalogItemValueType
+    temporal_value: Optional[DT.datetime] = None
+    description: Optional[str] = Field(default="", description="Description of the catalog item")
+    
+    # Nested Relationships!
+    aliases: List[CatalogItemAliasCreateDTO] = Field(default_factory=list)
+    
+    # Recursive typing for hierarchy (e.g., MX -> TAMPS -> Victoria)
+    children: List['CatalogItemCreateDTO'] = Field(default_factory=list)
+
+# 3. The Root Catalog DTO
+class CatalogCreateDTO(BaseModel):
+    name: str
+    value: str 
+    catalog_type: ENUMS.CatalogType
+    description: Optional[str] = Field(default="", description="Description of the catalog")
+    
+    # All items belonging to this catalog
+    items: List[CatalogItemCreateDTO] = Field(default_factory=list)
+
+# Resolve the forward reference for the recursive 'children' field
+CatalogItemCreateDTO.model_rebuild()
+
+class CatalogCreatedResponseDTO(BaseModel):
+    catalog_id: str
+
+class CatalogCreatedBulkResponseDTO(BaseModel):
+    catalog_ids: List[str]
+
+class CatalogItemAliasResponseDTO(BaseModel):
+    catalog_item_alias_id: Optional[str]= Field(default=None, description="Unique ID for this alias; may be None if not stored as a separate entity")
+    value: str
+    value_type: ENUMS.CatalogItemValueType
+    description: Optional[str] = Field(default="", description="Description of the alias")
+
+class CatalogItemResponseDTO(BaseModel):
+    catalog_item_id: str
+    name: str
+    value: str
+    code: int
+    value_type: ENUMS.CatalogItemValueType
+    temporal_value: Optional[DT.datetime] = Field(default=None, description="Optional temporal value for the catalog item, if applicable")
+    description: Optional[str] = Field(default="", description="Description of the catalog item")
+    
+    aliases: List[CatalogItemAliasResponseDTO] = Field(default_factory=list, description="List of aliases associated with this catalog item")
+    children: List['CatalogItemResponseDTO'] = Field(default_factory=list, description="List of child catalog items (for hierarchical catalogs)")
+
+class CatalogResponseDTO(BaseModel):
+    catalog_id: str
+    name: str
+    value: str
+    catalog_type: ENUMS.CatalogType
+    description: Optional[str] = Field(default="", description="Description of the catalog")
+    
+    # All items belonging to this catalog
+    items: List[CatalogItemResponseDTO] = Field(default_factory=list, description="List of items in this catalog, each with their aliases and hierarchical children fully populated")
+
+# Resolve the forward reference for the recursive 'children' field
+CatalogItemResponseDTO.model_rebuild()
+
+# Optional: A lightweight DTO just for listing catalogs without downloading all items
+class CatalogSummaryDTO(BaseModel):
+    catalog_id: str
+    name: str
+    value: str
+    catalog_type: ENUMS.CatalogType
+
+
+# ==========================================
+# DATA INGESTION DTOs
+# ==========================================
+
+class DataSourceCreateDTO(BaseModel):
+    name: str = Field(..., description="Name of the dataset.")
+    description: Optional[str] = Field(default="", description="Human-readable description.")
+    format: ENUMS.DataSourceFormatEnum = Field(default=ENUMS.DataSourceFormatEnum.CSV)
+    bucket_id: Optional[str] = Field(default=None, description="Path or URL of the static file.")
+    connection_uri: Optional[str] = Field(default=None, description="Connection string for databases.")
+
+class DataSourceDTO(BaseModel):
+    source_id: str
+    name: str
+    description: str = Field(default="", description="Human-readable description.")
+    format: ENUMS.DataSourceFormatEnum
+    bucket_id: Optional[str] = Field(default=None, description="MictlanX bucket id")
+    connection_uri: Optional[str] = Field(default=None, description="Connection string for databases.")
+
+    @staticmethod
+    def from_model(model: M.DataSource) -> 'DataSourceDTO':
+        return DataSourceDTO(
+            source_id      = model.source_id,
+            name           = model.name,
+            description    = model.description or "",
+            format         = model.format,
+            bucket_id      = model.bucket_id,
+            connection_uri = model.connection_uri,
+        )
+
+class DataRecordCreateDTO(BaseModel):
+    """
+    A single aggregated data row.  `spatial_id`, `temporal_id`, and each element of
+    `interest_ids` must be valid `catalog_item_id` values from the associated catalogs.
+    """
+    record_id: str = Field(..., description="Unique identifier for this row. Use a deterministic ID so re-ingestion is idempotent.")
+    spatial_id: str = Field(..., description="catalog_item_id from a SPATIAL catalog (e.g. the state or municipality).")
+    temporal_id: DT.datetime = Field(..., description="Point in time this record represents (UTC datetime).")
+    interest_ids: List[str] = Field(
+        default_factory=list,
+        description="catalog_item_ids from INTEREST catalogs (e.g. disease type, sex). Used for DSL VI() filtering and BY() grouping.",
+    )
+    numerical_interest_ids: dict = Field(
+        default_factory=dict,
+        description="Numeric variables keyed by a short name (e.g. {'TASA_100K': 45.3}). Referenced by VO(AVG(TASA_100K)).",
+    )
+    raw_payload: dict = Field(default_factory=dict, description="Original source row kept for debugging. Not used in queries.")
+
+class DataSourceQueryDTO(BaseModel):
+    query: str = Field(
+        ...,
+        description=(
+            "JUB DSL query string. Examples: "
+            "`jub.v1.VS(MX)` — all records from Mexico; "
+            "`jub.v1.VS(TAM).VT(>= 2020).VI(SEX_FEMALE)` — filtered by state, year range, and sex."
+        ),
+    )
+    limit: Optional[int] = Field(default=100, ge=1, le=1000, description="Maximum records to return.")
+    skip: Optional[int] = Field(default=0, ge=0, description="Records to skip (pagination offset).")
+
+class DataSourceDeleteResponseDTO(BaseModel):
+    deleted: bool
+    records_removed: int
+
+
+# ==========================================
+# OBSERVATORY DTOs
+# ==========================================
+
+class ObservatoryCreateDTO(BaseModel):
+    """Creates an immediately-enabled observatory. For the full provisioning workflow use ObservatorySetupDTO."""
+    observatory_id: Optional[str] = Field(default=None, description="Custom string ID. A nanoid is auto-generated when omitted.")
+    title: str = Field(..., description="Human-readable title shown in the UI.")
+    description: Optional[str] = Field(default="", description="Short description of what this observatory covers.")
+    image_url: Optional[str] = Field(default=None, description="URL of a representative image or icon.")
+    metadata: Optional[Dict[str, str]] = Field(default_factory=dict, description="Arbitrary key-value pairs for client use.")
+
+
+class ObservatoryUpdateDTO(BaseModel):
+    title: Optional[str] = Field(default=None, description="Updated title of the observatory")
+    description: Optional[str] = Field(default=None, description="Updated description of the observatory")
+    image_url: Optional[str] = Field(default=None, description="Updated URL for the observatory's image or icon")
+    metadata: Optional[Dict[str, str]] = Field(default=None, description="Updated metadata for the observatory as key-value pairs")
+
+
+class LinkCatalogDTO(BaseModel):
+    catalog_id: str
+    level: int = Field(default=0, ge=0, description="Priority/display order for this catalog in the observatory.")
+
+
+class LinkProductDTO(BaseModel):
+    product_id: str
+
+
+class ObservatoryDeleteResponseDTO(BaseModel):
+    deleted: bool
+
+
+# ==========================================
+# PRODUCT DTOs
+# ==========================================
+
+class ProductCreateDTO(BaseModel):
+    """Creates a single product and links it to an observatory with optional catalog-item tags."""
+    product_id: Optional[str] = Field(default=None, description="Custom string ID. A nanoid is auto-generated when omitted.")
+    name: str = Field(..., description="Human-readable product name.")
+    description: Optional[str] = Field(default="", description="Short description of what data this product contains.")
+    observatory_id: str = Field(..., description="ID of the observatory this product belongs to.")
+    catalog_item_ids: List[str] = Field(
+        default_factory=list,
+        description="catalog_item_ids to tag this product with. These drive DSL-based product discovery.",
+    )
+
+
+class ProductUpdateDTO(BaseModel):
+    name: Optional[str] = Field(default=None, description="Updated name of the product")
+    description: Optional[str] = Field(default=None, description="Updated description of the product")
+
+
+class ProductSimpleDTO(BaseModel):
+    product_id: str
+    name: str
+    description: str = Field(default="", description="Description of the product")
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(model: M.ProductX) -> 'ProductSimpleDTO':
+        return ProductSimpleDTO(
+            product_id  = model.product_id,
+            name        = model.name,
+            description = model.description or "",
+            created_at  = model.created_at.isoformat(),
+            updated_at  = model.updated_at.isoformat(),
+        )
+
+
+class TagProductDTO(BaseModel):
+    catalog_item_ids: List[str] = Field(..., min_length=1)
+
+
+class ProductDeleteResponseDTO(BaseModel):
+    deleted: bool
+
+
+# ==========================================
+# CATALOG ITEM DTOs
+# ==========================================
+
+class CatalogItemStandaloneCreateDTO(BaseModel):
+    catalog_item_id: Optional[str] = Field(default=None, description="Custom ID; auto-generated if omitted.")
+    name: str
+    value: str
+    code: int
+    value_type: ENUMS.CatalogItemValueType
+    temporal_value: Optional[DT.datetime] = Field(default=None)
+    description: Optional[str] = Field(default="")
+    catalog_id: str = Field(..., description="The catalog this item belongs to.")
+    parent_item_id: Optional[str] = Field(default=None, description="Optional parent item ID for hierarchical relationships.")
+
+
+class CatalogItemUpdateDTO(BaseModel):
+    name: Optional[str] = Field(default=None)
+    description: Optional[str] = Field(default=None)
+    temporal_value: Optional[DT.datetime] = Field(default=None)
+
+
+class CatalogItemXResponseDTO(BaseModel):
+    catalog_item_id: str
+    name: str
+    value: str
+    code: int
+    value_type: ENUMS.CatalogItemValueType
+    catalog_type: Optional[ENUMS.CatalogType] = Field(default=None)
+    temporal_value: Optional[DT.datetime] = Field(default=None)
+    description: str = Field(default="")
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(model: M.CatalogItemX) -> 'CatalogItemXResponseDTO':
+        return CatalogItemXResponseDTO(
+            catalog_item_id = model.catalog_item_id,
+            name            = model.name,
+            value           = model.value,
+            code            = model.code,
+            value_type      = model.value_type,
+            catalog_type    = model.catalog_type,
+            temporal_value  = model.temporal_value,
+            description     = model.description or "",
+            created_at      = model.created_at.isoformat(),
+            updated_at      = model.updated_at.isoformat(),
+        )
+
+
+class CatalogItemDeleteResponseDTO(BaseModel):
+    deleted: bool
+
+
+class CatalogItemAliasXResponseDTO(BaseModel):
+    catalog_item_alias_id: str
+    value: str
+    value_type: ENUMS.CatalogItemValueType
+    catalog_type: Optional[ENUMS.CatalogType] = Field(default=None)
+    description: str = Field(default="")
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(model: M.CatalogItemAlias) -> 'CatalogItemAliasXResponseDTO':
+        return CatalogItemAliasXResponseDTO(
+            catalog_item_alias_id = model.catalog_item_alias_id,
+            value                 = model.value,
+            value_type            = model.value_type,
+            catalog_type          = model.catalog_type,
+            description           = model.description or "",
+            created_at            = model.created_at.isoformat(),
+            updated_at            = model.updated_at.isoformat(),
+        )
+
+
+class LinkItemToCatalogDTO(BaseModel):
+    catalog_id: str
+
+
+class LinkItemRelationshipDTO(BaseModel):
+    child_item_id: str = Field(..., description="ID of the child catalog item to link as a child of the parent.")
+
+
+# ==========================================
+# OBSERVATORY SETUP / PROVISIONING DTOs
+# ==========================================
+
+class ObservatorySetupDTO(BaseModel):
+    """One-shot request that creates a disabled observatory and queues a SETUP task."""
+    title: str
+    user_id: str = Field(..., description="User responsible for this observatory (used for task ownership).")
+    description: Optional[str] = Field(default="")
+    image_url: Optional[str] = Field(default=None)
+    metadata: Optional[Dict[str, str]] = Field(default_factory=dict)
+    observatory_id: Optional[str] = Field(default=None, description="Custom ID; auto-generated if omitted.")
+
+
+class ObservatorySetupResponseDTO(BaseModel):
+    observatory_id: str
+    task_id: str
+    status: str = "pending"
+    message: str = (
+        "Observatory created (disabled). Assign catalogs and products, "
+        "then POST /tasks/{task_id}/complete to enable it."
+    )
+
+
+# ==========================================
+# BULK CATALOG ASSIGNMENT DTOs
+# ==========================================
+
+class BulkCatalogsDTO(BaseModel):
+    """Assign N fully-nested catalogs (items + aliases + hierarchy) to an observatory."""
+    catalogs: List[CatalogCreateDTO]
+    # level: int = Field(default=0, ge=0, description="Link level applied to every catalog in this batch.")
+
+
+class BulkCatalogsResponseDTO(BaseModel):
+    observatory_id: str
+    catalog_ids: List[str]
+
+
+# ==========================================
+# BULK PRODUCT ASSIGNMENT DTOs
+# ==========================================
+
+class BulkProductItemDTO(BaseModel):
+    """A single product definition inside a bulk assignment request."""
+    product_id: Optional[str] = Field(default=None, description="Custom ID; auto-generated if omitted.")
+    name: str
+    description: Optional[str] = Field(default="")
+    catalog_item_ids: List[str] = Field(default_factory=list, description="Catalog-item tags to link to this product.")
+
+
+class BulkProductsDTO(BaseModel):
+    products: List[BulkProductItemDTO] = Field(..., min_length=1)
+
+
+class BulkProductCreatedDTO(BaseModel):
+    product_id: str
+    name: str
+
+
+class BulkProductsResponseDTO(BaseModel):
+    observatory_id: str
+    products: List[BulkProductCreatedDTO]
+
+
+# ==========================================
+# FILE UPLOAD / INGESTION DTOs
+# ==========================================
+
+class ProductUploadResponseDTO(BaseModel):
+    """Returned immediately after a file is queued for background ingestion."""
+    job_id: str
+    product_id: str
+    status: str = "queued"
+
+
+# ==========================================
+# TASK COMPLETION DTOs  (called by external systems)
+# ==========================================
+
+class TaskCompleteDTO(BaseModel):
+    success: bool
+    message: Optional[str] = Field(default=None, description="Human-readable result or error detail.")
+
+
+class TaskCompleteResponseDTO(BaseModel):
+    task_id: str
+    status: str
+    observatory_id: str
+    observatory_enabled: bool
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SERVICE / WORKFLOW DOMAIN DTOs
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── BuildingBlock ─────────────────────────────────────────────────────────────
+
+class BuildingBlockCreateDTO(BaseModel):
+    name: str    = Field(..., description="Human-readable identifier for this building block.")
+    command: str = Field(..., description="Entrypoint command executed inside the container.")
+    image: str   = Field(..., description="Docker image reference (e.g. 'python:3.11-slim').")
+    description: Optional[str] = Field(default="")
+
+
+class BuildingBlockUpdateDTO(BaseModel):
+    name: Optional[str]        = None
+    command: Optional[str]     = None
+    image: Optional[str]       = None
+    description: Optional[str] = None
+
+
+class BuildingBlockDTO(BaseModel):
+    building_block_id: str
+    name: str
+    command: str
+    image: str
+    description: str
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.BuildingBlock') -> 'BuildingBlockDTO':
+        return BuildingBlockDTO(
+            building_block_id = m.building_block_id,
+            name              = m.name,
+            command           = m.command,
+            image             = m.image,
+            description       = m.description or "",
+            created_at        = m.created_at.isoformat(),
+            updated_at        = m.updated_at.isoformat(),
+        )
+
+
+# ── Pattern ───────────────────────────────────────────────────────────────────
+
+class PatternCreateDTO(BaseModel):
+    name: str  = Field(..., description="Human-readable pattern name.")
+    task: str  = Field(..., description="Task category (e.g. 'transform', 'ingest').")
+    pattern: str = Field(..., description="Pattern type (e.g. 'map-reduce', 'pipeline').")
+    description: Optional[str] = Field(default="")
+    workers: int               = Field(default=1, ge=1)
+    loadbalancer: str          = Field(default="round-robin")
+    building_block_id: Optional[str] = Field(default=None, description="ID of an existing BuildingBlock.")
+
+
+class PatternUpdateDTO(BaseModel):
+    name: Optional[str]             = None
+    task: Optional[str]             = None
+    pattern: Optional[str]          = None
+    description: Optional[str]      = None
+    workers: Optional[int]          = Field(default=None, ge=1)
+    loadbalancer: Optional[str]     = None
+    building_block_id: Optional[str]= None
+
+
+class PatternDTO(BaseModel):
+    pattern_id: str
+    name: str
+    task: str
+    pattern: str
+    description: str
+    workers: int
+    loadbalancer: str
+    building_block_id: Optional[str]
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.PatternX') -> 'PatternDTO':
+        return PatternDTO(
+            pattern_id        = m.pattern_id,
+            name              = m.name,
+            task              = m.task,
+            pattern           = m.pattern,
+            description       = m.description or "",
+            workers           = m.workers,
+            loadbalancer      = m.loadbalancer,
+            building_block_id = m.building_block_id,
+            created_at        = m.created_at.isoformat(),
+            updated_at        = m.updated_at.isoformat(),
+        )
+
+
+# ── Stage ─────────────────────────────────────────────────────────────────────
+
+class StageCreateDTO(BaseModel):
+    name: str     = Field(..., description="Stage name.")
+    source: str   = Field(..., description="Input source identifier or URI.")
+    sink: str     = Field(..., description="Output sink identifier or URI.")
+    endpoint: str = Field(..., description="HTTP or messaging endpoint exposed by this stage.")
+    transformation_id: Optional[str] = Field(default=None, description="ID of an existing PatternX.")
+
+
+class StageUpdateDTO(BaseModel):
+    name: Optional[str]             = None
+    source: Optional[str]           = None
+    sink: Optional[str]             = None
+    endpoint: Optional[str]         = None
+    transformation_id: Optional[str]= None
+
+
+class StageDTO(BaseModel):
+    stage_id: str
+    name: str
+    source: str
+    sink: str
+    endpoint: str
+    transformation_id: Optional[str]
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.StageX') -> 'StageDTO':
+        return StageDTO(
+            stage_id          = m.stage_id,
+            name              = m.name,
+            source            = m.source,
+            sink              = m.sink,
+            endpoint          = m.endpoint,
+            transformation_id = m.transformation_id,
+            created_at        = m.created_at.isoformat(),
+            updated_at        = m.updated_at.isoformat(),
+        )
+
+
+# ── Workflow ──────────────────────────────────────────────────────────────────
+
+class WorkflowCreateDTO(BaseModel):
+    name: str
+    stage_ids: List[str] = Field(default_factory=list, description="Ordered stage IDs.")
+
+
+class WorkflowUpdateDTO(BaseModel):
+    name: Optional[str]       = None
+    stage_ids: Optional[List[str]] = None
+
+
+class WorkflowDTO(BaseModel):
+    workflow_id: str
+    name: str
+    stage_ids: List[str]
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.WorkflowX') -> 'WorkflowDTO':
+        return WorkflowDTO(
+            workflow_id = m.workflow_id,
+            name        = m.name,
+            stage_ids   = m.stage_ids,
+            created_at  = m.created_at.isoformat(),
+            updated_at  = m.updated_at.isoformat(),
+        )
+
+
+# ── Service ───────────────────────────────────────────────────────────────────
+
+class ServiceCreateDTO(BaseModel):
+    name: str        = Field(..., description="Service name — searchable via DSL.")
+    owner_id: str    = Field(..., description="User ID of the service owner.")
+    description: Optional[str] = Field(default="")
+    public: bool               = Field(default=False, description="Publicly discoverable via SVC(*) queries.")
+    provider: ENUMS.ServiceProviderEnum = Field(default=ENUMS.ServiceProviderEnum.OTHER, description="Who provides this service (e.g. INTERNAL, EXTERNAL_API, or THIRD_PARTY).")
+    workflow_id: Optional[str] = Field(default=None, description="Reference to an existing workflow.")
+
+
+class ServiceUpdateDTO(BaseModel):
+    name: Optional[str]        = Field(default=None, description="Updated service name.")
+    description: Optional[str] = Field(default=None, description="Updated service description.")
+    public: Optional[bool]     = Field(default=None, description="Whether this service should be publicly discoverable via SVC(*) queries.")
+    workflow_id: Optional[str] = Field(default=None, description="Updated reference to an existing workflow.")
+    provider: Optional[ENUMS.ServiceProviderEnum] = Field(default=None, description="Updated provider of this service (e.g. INTERNAL, EXTERNAL_API, or THIRD_PARTY).")
+
+class ServiceDTO(BaseModel):
+    service_id: str
+    name: str
+    description: str
+    owner_id: str
+    public: bool
+    provider: str
+    workflow_id: Optional[str]
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.ServiceX') -> 'ServiceDTO':
+        return ServiceDTO(
+            service_id  = m.service_id,
+            name        = m.name,
+            description = m.description or "",
+            owner_id    = m.owner_id,
+            public      = m.public,
+            provider    = m.provider,
+            workflow_id = m.workflow_id,
+            created_at  = m.created_at.isoformat(),
+            updated_at  = m.updated_at.isoformat(),
+        )
+
+
+# ── Hydrated detail DTOs (used by search/services) ───────────────────────────
+
+class PatternDetailDTO(BaseModel):
+    pattern_id: str
+    name: str
+    task: str
+    pattern: str
+    description: str
+    workers: int
+    loadbalancer: str
+    building_block: Optional['BuildingBlockDTO'] = None
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.PatternX', building_block: Optional['BuildingBlockDTO'] = None) -> 'PatternDetailDTO':
+        return PatternDetailDTO(
+            pattern_id    = m.pattern_id,
+            name          = m.name,
+            task          = m.task,
+            pattern       = m.pattern,
+            description   = m.description or "",
+            workers       = m.workers,
+            loadbalancer  = m.loadbalancer,
+            building_block= building_block,
+            created_at    = m.created_at.isoformat(),
+            updated_at    = m.updated_at.isoformat(),
+        )
+
+
+class StageDetailDTO(BaseModel):
+    stage_id: str
+    name: str
+    source: str
+    sink: str
+    endpoint: str
+    transformation: Optional[PatternDetailDTO] = None
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.StageX', transformation: Optional[PatternDetailDTO] = None) -> 'StageDetailDTO':
+        return StageDetailDTO(
+            stage_id      = m.stage_id,
+            name          = m.name,
+            source        = m.source,
+            sink          = m.sink,
+            endpoint      = m.endpoint,
+            transformation= transformation,
+            created_at    = m.created_at.isoformat(),
+            updated_at    = m.updated_at.isoformat(),
+        )
+
+
+class WorkflowDetailDTO(BaseModel):
+    workflow_id: str
+    name: str
+    stages: List[StageDetailDTO]
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.WorkflowX', stages: List[StageDetailDTO]) -> 'WorkflowDetailDTO':
+        return WorkflowDetailDTO(
+            workflow_id = m.workflow_id,
+            name        = m.name,
+            stages      = stages,
+            created_at  = m.created_at.isoformat(),
+            updated_at  = m.updated_at.isoformat(),
+        )
+
+
+class ServiceDetailDTO(BaseModel):
+    service_id: str
+    name: str
+    description: str
+    owner_id: str
+    public: bool
+    provider: str
+    workflow: Optional[WorkflowDetailDTO] = None
+    created_at: str
+    updated_at: str
+
+    @staticmethod
+    def from_model(m: 'M.ServiceX', workflow: Optional[WorkflowDetailDTO] = None) -> 'ServiceDetailDTO':
+        return ServiceDetailDTO(
+            service_id  = m.service_id,
+            name        = m.name,
+            description = m.description or "",
+            owner_id    = m.owner_id,
+            public      = m.public,
+            provider    = m.provider,
+            workflow    = workflow,
+            created_at  = m.created_at.isoformat(),
+            updated_at  = m.updated_at.isoformat(),
+        )
+
+
+# ── Bulk / Index ──────────────────────────────────────────────────────────────
+
+class BuildingBlockInlineDTO(BaseModel):
+    """Inline building block definition for the index endpoint."""
+    name: str
+    command: str
+    image: str
+    description: Optional[str] = ""
+
+
+class PatternInlineDTO(BaseModel):
+    """Inline pattern definition for the index endpoint."""
+    name: str
+    task: str
+    pattern: str
+    description: Optional[str] = ""
+    workers: int               = 1
+    loadbalancer: str          = "round-robin"
+    building_block: Optional[BuildingBlockInlineDTO] = Field(
+        default=None, description="Create a new building block inline."
+    )
+    building_block_id: Optional[str] = Field(
+        default=None, description="Reference an existing building block by ID."
+    )
+
+
+class StageInlineDTO(BaseModel):
+    """Inline stage definition for the index endpoint."""
+    name: str
+    source: str
+    sink: str
+    endpoint: str
+    transformation: Optional[PatternInlineDTO] = Field(
+        default=None, description="Create a new pattern inline."
+    )
+    transformation_id: Optional[str] = Field(
+        default=None, description="Reference an existing pattern by ID."
+    )
+
+
+class WorkflowInlineDTO(BaseModel):
+    """Inline workflow definition for the index endpoint."""
+    name: str
+    stages: List[StageInlineDTO] = Field(..., min_length=1)
+
+
+class ServiceIndexDTO(BaseModel):
+    """
+    One-shot request that creates the complete Service → Workflow → Stages →
+    Patterns → BuildingBlocks tree in a single call.
+
+    Either provide inline definitions or reference existing IDs — both are
+    supported at every level.
+    """
+    name: str        = Field(..., description="Service name.")
+    owner_id: str    = Field(..., description="User ID of the service owner.")
+    description: Optional[str] = Field(default="")
+    public: bool               = Field(default=False)
+    workflow: Optional[WorkflowInlineDTO] = Field(
+        default=None, description="Create a new workflow inline."
+    )
+    workflow_id: Optional[str] = Field(
+        default=None, description="Reference an existing workflow by ID."
+    )
+    provider: ENUMS.ServiceProviderEnum = Field(default=ENUMS.ServiceProviderEnum.OTHER, description="Service provider type.")
+
+
+class ServiceIndexResponseDTO(BaseModel):
+    """Summary of every entity created or referenced during a bulk index."""
+    service_id: str
+    workflow_id: Optional[str]          = None
+    stage_ids: List[str]                = Field(default_factory=list)
+    pattern_ids: List[str]              = Field(default_factory=list)
+    building_block_ids: List[str]       = Field(default_factory=list)
+
+
+# ── Search ────────────────────────────────────────────────────────────────────
+
+class ServiceQueryDTO(BaseModel):
+    """Request body for the Services DSL search endpoint."""
+    query: str = Field(
+        ...,
+        description=(
+            "Services DSL query. Examples: "
+            "`jub.v1.SVC(*)` — all services; "
+            "`jub.v1.SVC(name=cancer)` — name contains 'cancer'; "
+            "`jub.v1.SVC(public=true)` — public only; "
+            "`jub.v1.SVC(owner=usr_abc)` — by owner. "
+            "Combine: `jub.v1.SVC(name=cancer,public=true)`."
+        ),
+    )
+    limit: int = Field(default=100, ge=1, le=1000)
+    skip: int  = Field(default=0, ge=0)
+
+
+class ServiceDeleteResponseDTO(BaseModel):
+    deleted: bool
+    service_id: str
+    cascade: dict = Field(
+        default_factory=dict,
+        description="Counts of cascade-deleted entities: {'workflow': 1, 'stages': N}.",
+    )

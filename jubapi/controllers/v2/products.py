@@ -1,51 +1,304 @@
 import os
-import time as T
-from typing import List
-from fastapi import APIRouter,Depends
-from fastapi import Response,HTTPException
-from jubapi.db import get_collection
+import mimetypes
+from typing import List, Optional
+from fastapi import Depends, Query, status, UploadFile, File, Form, BackgroundTasks, HTTPException
+from fastapi.responses import Response
+from fastapi.routing import APIRouter
+from nanoid import generate as nanoid
+
+import jubapi.services.v2 as S
+import jubapi.middlewares as MX
+import jubapi.models.v2 as M
+import jubapi.dto.v2 as DTO
+import jubapi.enums.v2 as ENUMS
+from jubapi.storage import StorageBackend
 from jubapi.log.log import Log
-from jubapi.services.v2 import ProductsService
-from jubapi.repositories.v2 import ProductRepository
-from jubapi.dto.v2 import ProductDTO
-from jubapi.querylang.dto import  ProductCreationDTO
 
-LOG_DEBUG = bool(int(os.environ.get("LOG_DEBUG","1")))
-log = Log(
-    name=os.environ.get("CATALOGS_LOG_NAME","oca_product_v2"),
-    path=os.environ.get("JUB_LOG_PATH","/log"),
-    console_handler_filter= lambda x : LOG_DEBUG
+router = APIRouter(prefix="/products", tags=["products_v2"])
+
+log = Log(name=__name__, path=os.environ.get("JUB_LOG_PATH", "/log"))
+
+
+# ==========================================
+# CRUD
+# ==========================================
+
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    response_model=DTO.ProductSimpleDTO,
+    summary="Create a single product",
+    description=(
+        "Creates one product and links it to an observatory with optional catalog-item tags. "
+        "Use **POST /observatories/{id}/products/bulk** to create multiple products at once."
+    ),
 )
-router = APIRouter(prefix="/v2/products")
-
-
-def get_service()->ProductsService:
-    collection =  get_collection(name="productsv2")
-    repository = ProductRepository(collection= collection)
-    service = ProductsService(repository= repository)
-    return service
-
-@router.post("/x")
-async def create_productx(
-    observatory:ProductCreationDTO,
-    product_service:ProductsService = Depends(get_service)
-):
-    x = await product_service.create(
-        product=observatory
-    )
-
-    if x.is_err:
-        raise x.unwrap_err()
-    return { "pid": x.unwrap()}
-@router.post("/")
 async def create_product(
-    observatory:ProductDTO,
-    product_service:ProductsService = Depends(get_service)
+    payload: DTO.ProductCreateDTO,
+    svc: S.ProductService = Depends(MX.get_product_service),
 ):
-    x = await product_service.create(
-        product=observatory
+    product_id = payload.product_id or nanoid(size=12)
+    model = M.ProductX(
+        product_id  = product_id,
+        name        = payload.name,
+        description = payload.description or "",
+    )
+    result = await svc.insert_product(
+        product          = model,
+        observatory_id   = payload.observatory_id,
+        catalog_item_ids = payload.catalog_item_ids or [],
+    )
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    # Re-fetch for full timestamps
+    fetched = await svc.get_product_by_id(result.unwrap())
+    if fetched.is_err:
+        raise fetched.unwrap_err().to_http_exception()
+    return DTO.ProductSimpleDTO.from_model(fetched.unwrap())
+
+
+@router.get("", response_model=List[DTO.ProductSimpleDTO])
+async def list_products(
+    limit: int = Query(100, ge=1, le=500),
+    svc: S.ProductService = Depends(MX.get_product_service),
+):
+    result = await svc.list_products(limit=limit)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    return result.unwrap()
+
+
+@router.get("/{product_id}", response_model=DTO.ProductSimpleDTO)
+async def get_product(
+    product_id: str,
+    svc: S.ProductService = Depends(MX.get_product_service),
+):
+    result = await svc.get_product_by_id(product_id)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    return DTO.ProductSimpleDTO.from_model(result.unwrap())
+
+
+@router.put("/{product_id}", response_model=DTO.ProductSimpleDTO)
+async def update_product(
+    product_id: str,
+    payload: DTO.ProductUpdateDTO,
+    svc: S.ProductService = Depends(MX.get_product_service),
+):
+    update_data = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not update_data:
+        result = await svc.get_product_by_id(product_id)
+        if result.is_err:
+            raise result.unwrap_err().to_http_exception()
+        return DTO.ProductSimpleDTO.from_model(result.unwrap())
+
+    result = await svc.update_product(product_id, update_data)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    return result.unwrap()
+
+
+@router.delete("/{product_id}", response_model=DTO.ProductDeleteResponseDTO)
+async def delete_product(
+    product_id: str,
+    svc: S.ProductService = Depends(MX.get_product_service),
+):
+    result = await svc.delete_product(product_id)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    return DTO.ProductDeleteResponseDTO(deleted=result.unwrap())
+
+
+# ==========================================
+# Catalog-item tag management
+# ==========================================
+
+@router.get("/{product_id}/tags")
+async def get_tags(
+    product_id: str,
+    svc: S.ProductService = Depends(MX.get_product_service),
+):
+    # Ensure product exists
+    check = await svc.get_product_by_id(product_id)
+    if check.is_err:
+        raise check.unwrap_err().to_http_exception()
+
+    result = await svc.get_product_tags(product_id)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    return {"product_id": product_id, "catalog_item_ids": result.unwrap()}
+
+
+@router.get("/{product_id}/tags/details", response_model=List[DTO.CatalogItemXResponseDTO])
+async def get_tag_details(
+    product_id: str,
+    prod_svc: S.ProductService = Depends(MX.get_product_service),
+    cat_svc:  S.CatalogService = Depends(MX.get_catalog_service),
+):
+    check = await prod_svc.get_product_by_id(product_id)
+    if check.is_err:
+        raise check.unwrap_err().to_http_exception()
+
+    tags_result = await prod_svc.get_product_tags(product_id)
+    if tags_result.is_err:
+        raise tags_result.unwrap_err().to_http_exception()
+
+    items = []
+    for item_id in tags_result.unwrap():
+        item_result = await cat_svc.get_catalog_item(item_id)
+        if item_result.is_ok:
+            items.append(DTO.CatalogItemXResponseDTO.from_model(item_result.unwrap()))
+    return items
+
+
+@router.post("/{product_id}/tags", status_code=status.HTTP_201_CREATED)
+async def add_tags(
+    product_id: str,
+    payload: DTO.TagProductDTO,
+    svc: S.ProductService = Depends(MX.get_product_service),
+):
+    result = await svc.tag_product(product_id, payload.catalog_item_ids)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    return {"product_id": product_id, "added": result.unwrap()}
+
+
+@router.delete("/{product_id}/tags/{catalog_item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_tag(
+    product_id: str,
+    catalog_item_id: str,
+    svc: S.ProductService = Depends(MX.get_product_service),
+):
+    check = await svc.get_product_by_id(product_id)
+    if check.is_err:
+        raise check.unwrap_err().to_http_exception()
+
+    result = await svc.untag_product(product_id, catalog_item_id)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+
+
+# ==========================================
+# FILE UPLOAD  (queued background ingestion)
+# ==========================================
+
+async def _process_upload(
+    product_id: str,
+    job_id:     str,
+    filename:   str,
+    data:       bytes,
+    storage:    StorageBackend,
+    task_svc:   S.TasksService,
+) -> None:
+    """
+    Background worker: persist the file via StorageBackend, then mark the job task
+    as SUCCESS or FAILED.  This runs after the HTTP response has already been sent.
+    """
+    try:
+        key = f"products/{product_id}/{job_id}/{filename}"
+        await storage.put(key, data)
+        await task_svc.complete_task(job_id, success=True)
+    except Exception as exc:
+        log.error(f"Upload processing failed for product {product_id}: {exc}")
+        await task_svc.complete_task(job_id, success=False, error_msg=str(exc))
+
+
+@router.post("/{product_id}/upload", status_code=status.HTTP_202_ACCEPTED,
+             response_model=DTO.ProductUploadResponseDTO)
+async def upload_product_file(
+    product_id:      str,
+    background_tasks: BackgroundTasks,
+    file:            UploadFile         = File(..., description="Data file to ingest for this product."),
+    current_user:     DTO.UserProfileDTO = Depends(MX.get_current_user),
+    prod_svc:        S.ProductService   = Depends(MX.get_product_service),
+    task_svc:        S.TasksService     = Depends(MX.get_tasks_service),
+    storage:         StorageBackend     = Depends(MX.get_storage_backend),
+):
+    """
+    Accepts a file for a product and queues it for background ingestion.
+
+    Returns immediately with a `job_id` (a task ID).  The background worker
+    persists the file via the configured `StorageBackend`, then marks the job
+    SUCCESS or FAILED.  Poll `GET /tasks/{job_id}` to track progress.
+
+    The external indexing system should call `POST /tasks/{job_id}/complete`
+    once it has finished indexing the stored file.
+    """
+    check = await prod_svc.get_product_by_id(product_id)
+    if check.is_err:
+        raise check.unwrap_err().to_http_exception()
+    product = check.unwrap()
+
+    # Determine the observatory this product belongs to (needed for the task)
+    obs_link = await prod_svc.get_product_observatory(product_id)
+    observatory_id = obs_link.unwrap() if obs_link.is_ok else "unknown"
+
+    # Create a PENDING task so the job is trackable
+    task_result = await task_svc.create_task(DTO.CreateTaskDTO(
+        user_id        = current_user.user_id,
+        observatory_id = observatory_id,
+        title          = f"Index: {product.name} — {file.filename}",
+        description    = f"File ingestion queued for product {product_id}.",
+        operation      = ENUMS.TaskOperationEnum.INDEX,
+    ))
+    if task_result.is_err:
+        raise task_result.unwrap_err().to_http_exception()
+
+    job_id = task_result.unwrap()
+
+    # Read bytes now (UploadFile is not safe to pass across async boundaries)
+    data = await file.read()
+
+    # Queue the actual processing — response is returned immediately
+    background_tasks.add_task(
+        _process_upload, product_id, job_id, file.filename, data, storage, task_svc
     )
 
-    if x.is_err:
-        raise x.unwrap_err()
-    return { "pid": x.unwrap()}
+    return DTO.ProductUploadResponseDTO(job_id=job_id, product_id=product_id)
+
+
+@router.get("/{product_id}/download")
+async def download_product_file(
+    product_id: str,
+    job_id:     Optional[str]      = Query(None, description="Specific upload job to download. Defaults to the latest."),
+    prod_svc:   S.ProductService   = Depends(MX.get_product_service),
+    storage:    StorageBackend     = Depends(MX.get_storage_backend),
+):
+    """
+    Downloads a previously uploaded file for a product.
+    If *job_id* is omitted the most recently uploaded file is returned.
+    """
+    check = await prod_svc.get_product_by_id(product_id)
+    if check.is_err:
+        log.error(f"Download failed: product {product_id} not found.")
+        raise check.unwrap_err().to_http_exception()
+
+    log.debug({
+        "action": "download_product_file",
+        "product_id": product_id,
+        "job_id": job_id,
+    })
+
+    prefix = f"products/{product_id}/{job_id}" if job_id else f"products/{product_id}"
+    keys   = await storage.list(prefix)
+
+    if not keys:
+        log.error(f"Download failed: no files found for product {product_id}.")
+        raise HTTPException(status_code=404, detail="No files found for this product.")
+
+    key      = keys[-1]          # latest file
+    filename = key.split("/")[-1]
+    log.debug({
+        "action": "get_product_file",
+        "product_id": product_id,
+        "job_id": job_id,
+        "storage_key": key,
+    })
+    data     = await storage.get(key)
+
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return Response(
+        content     = data,
+        media_type  = media_type,
+        headers     = {"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

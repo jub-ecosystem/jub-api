@@ -1,0 +1,719 @@
+[
+  {
+    "name": "Dimensión Espacial — México",
+    "value": "SPATIAL_MX",
+    "catalog_type": "SPATIAL",
+    "description": "Jerarquía geográfica: País → Estado → Municipio (fuente: INEGI)",
+    "items": [
+      {
+        "name": "México",
+        "value": "MX",
+        "code": 0,
+        "value_type": "STRING",
+        "description": "República Mexicana",
+        "temporal_value": null,
+        "aliases": [
+          {
+            "value": "MEX",
+            "value_type": "STRING",
+            "description": "Código ISO 3166-1 alpha-3"
+          },
+          {
+            "value": "Mexico",
+            "value_type": "STRING",
+            "description": "Nombre en inglés"
+          },
+          {
+            "value": "484",
+            "value_type": "INTEGER",
+            "description": "Código numérico ISO 3166-1"
+          }
+        ],
+        "children": [
+          {
+            "name": "Aguascalientes",
+            "value": "AGUASCALIENTES",
+            "code": 1,
+            "value_type": "STRING",
+            "description": "Estado de Aguascalientes, México",
+            "temporal_value": null,
+            "aliases": [
+              {
+                "value": "1",
+                "value_type": "INTEGER",
+                "description": "Clave INEGI del estado"
+              },
+              {
+                "value": "Aguascalientes",
+                "value_type": "STRING",
+                "description": "Nombre oficial"
+              }
+            ],
+            "children": [
+              {
+                "name": "Aguascalientes",
+                "value": "AGUASCALIENTES",
+                "code": 1,
+                "value_type": "STRING",
+                "description": "Municipio de Aguascalientes, Aguascalientes",
+                "temporal_value": null,
+                "aliases": [
+                  {
+                    "value": "1",
+                    "value_type": "INTEGER",
+                    "description": "Clave INEGI del municipio"
+                  },
+                  {
+                    "value": "Aguascalientes",
+                    "value_type": "STRING",
+                    "description": "Nombre oficial"
+                  }
+                ],
+                "children": []
+              }
+            ]
+          },
+          {
+            "name": "Baja California",
+            "value": "BAJA_CALIFORNIA",
+            "code": 2,
+            "value_type": "STRING",
+            "description": "Estado de Baja California, México",
+            "temporal_value": null,
+            "aliases": [
+              {
+                "value": "2",
+                "value_type": "INTEGER",
+                "description": "Clave INEGI del estado"
+              },
+              {
+                "value": "Baja California",
+                "value_type": "STRING",
+                "description": "Nombre oficial"
+              }
+            ],
+            "children": [
+              {
+                "name": "Ensenada",
+                "value": "ENSENADA",
+                "code": 1,
+                "value_type": "STRING",
+                "description": "Municipio de Ensenada, Baja California",
+                "temporal_value": null,
+                "aliases": [
+                  {
+                    "value": "1",
+                    "value_type": "INTEGER",
+                    "description": "Clave INEGI del municipio"
+                  },
+                  {
+                    "value": "Ensenada",
+                    "value_type": "STRING",
+                    "description": "Nombre oficial"
+                  }
+                ],
+                "children": []
+              },
+              {
+                "name": "Mexicali",
+                "value": "MEXICALI",
+                "code": 2,
+                "value_type": "STRING",
+                "description": "Municipio de Mexicali, Baja California",
+                "temporal_value": null,
+                "aliases": [
+                  {
+                    "value": "2",
+                    "value_type": "INTEGER",
+                    "description": "Clave INEGI del municipio"
+                  },
+                  {
+                    "value": "Mexicali",
+                    "value_type": "STRING",
+                    "description": "Nombre oficial"
+                  }
+                ],
+                "children": []
+              },
+              {
+                "name": "Playas de Rosarito",
+                "value": "PLAYAS_DE_ROSARITO",
+                "code": 5,
+                "value_type": "STRING",
+                "description": "Municipio de Playas de Rosarito, Baja California",
+                "temporal_value": null,
+                "aliases": [
+                  {
+                    "value": "5",
+                    "value_type": "INTEGER",
+                    "description": "Clave INEGI del municipio"
+                  },
+                  {
+                    "value": "Playas de Rosarito",
+                    "value_type": "STRING",
+                    "description": "Nombre oficial"
+                  }
+                ],
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Dimensión Temporal — Años de Reporte",
+    "value": "TEMPORAL_ANIO",
+    "catalog_type": "TEMPORAL",
+    "description": "Años calendario presentes en los reportes de emisiones",
+    "items": [
+      {
+        "name": "2004",
+        "value": "Y2004",
+        "code": 2004,
+        "value_type": "DATETIME",
+        "description": "Año de reporte 2004",
+        "temporal_value": "2004-01-01T00:00:00+00:00",
+        "aliases": [
+          {
+            "value": "2004",
+            "value_type": "INTEGER",
+            "description": "Año como entero"
+          },
+          {
+            "value": "AÑO_2004",
+            "value_type": "STRING",
+            "description": "Etiqueta en español"
+          },
+          {
+            "value": "YEAR_2004",
+            "value_type": "STRING",
+            "description": "Etiqueta en inglés"
+          }
+        ],
+        "children": []
+      },
+      {
+        "name": "2005",
+        "value": "Y2005",
+        "code": 2005,
+        "value_type": "DATETIME",
+        "description": "Año de reporte 2005",
+        "temporal_value": "2005-01-01T00:00:00+00:00",
+        "aliases": [
+          {
+            "value": "2005",
+            "value_type": "INTEGER",
+            "description": "Año como entero"
+          },
+          {
+            "value": "AÑO_2005",
+            "value_type": "STRING",
+            "description": "Etiqueta en español"
+          },
+          {
+            "value": "YEAR_2005",
+            "value_type": "STRING",
+            "description": "Etiqueta en inglés"
+          }
+        ],
+        "children": []
+      },
+      {
+        "name": "2007",
+        "value": "Y2007",
+        "code": 2007,
+        "value_type": "DATETIME",
+        "description": "Año de reporte 2007",
+        "temporal_value": "2007-01-01T00:00:00+00:00",
+        "aliases": [
+          {
+            "value": "2007",
+            "value_type": "INTEGER",
+            "description": "Año como entero"
+          },
+          {
+            "value": "AÑO_2007",
+            "value_type": "STRING",
+            "description": "Etiqueta en español"
+          },
+          {
+            "value": "YEAR_2007",
+            "value_type": "STRING",
+            "description": "Etiqueta en inglés"
+          }
+        ],
+        "children": []
+      },
+      {
+        "name": "2008",
+        "value": "Y2008",
+        "code": 2008,
+        "value_type": "DATETIME",
+        "description": "Año de reporte 2008",
+        "temporal_value": "2008-01-01T00:00:00+00:00",
+        "aliases": [
+          {
+            "value": "2008",
+            "value_type": "INTEGER",
+            "description": "Año como entero"
+          },
+          {
+            "value": "AÑO_2008",
+            "value_type": "STRING",
+            "description": "Etiqueta en español"
+          },
+          {
+            "value": "YEAR_2008",
+            "value_type": "STRING",
+            "description": "Etiqueta en inglés"
+          }
+        ],
+        "children": []
+      },
+      {
+        "name": "2009",
+        "value": "Y2009",
+        "code": 2009,
+        "value_type": "DATETIME",
+        "description": "Año de reporte 2009",
+        "temporal_value": "2009-01-01T00:00:00+00:00",
+        "aliases": [
+          {
+            "value": "2009",
+            "value_type": "INTEGER",
+            "description": "Año como entero"
+          },
+          {
+            "value": "AÑO_2009",
+            "value_type": "STRING",
+            "description": "Etiqueta en español"
+          },
+          {
+            "value": "YEAR_2009",
+            "value_type": "STRING",
+            "description": "Etiqueta en inglés"
+          }
+        ],
+        "children": []
+      },
+      {
+        "name": "2010",
+        "value": "Y2010",
+        "code": 2010,
+        "value_type": "DATETIME",
+        "description": "Año de reporte 2010",
+        "temporal_value": "2010-01-01T00:00:00+00:00",
+        "aliases": [
+          {
+            "value": "2010",
+            "value_type": "INTEGER",
+            "description": "Año como entero"
+          },
+          {
+            "value": "AÑO_2010",
+            "value_type": "STRING",
+            "description": "Etiqueta en español"
+          },
+          {
+            "value": "YEAR_2010",
+            "value_type": "STRING",
+            "description": "Etiqueta en inglés"
+          }
+        ],
+        "children": []
+      },
+      {
+        "name": "2011",
+        "value": "Y2011",
+        "code": 2011,
+        "value_type": "DATETIME",
+        "description": "Año de reporte 2011",
+        "temporal_value": "2011-01-01T00:00:00+00:00",
+        "aliases": [
+          {
+            "value": "2011",
+            "value_type": "INTEGER",
+            "description": "Año como entero"
+          },
+          {
+            "value": "AÑO_2011",
+            "value_type": "STRING",
+            "description": "Etiqueta en español"
+          },
+          {
+            "value": "YEAR_2011",
+            "value_type": "STRING",
+            "description": "Etiqueta en inglés"
+          }
+        ],
+        "children": []
+      },
+      {
+        "name": "2012",
+        "value": "Y2012",
+        "code": 2012,
+        "value_type": "DATETIME",
+        "description": "Año de reporte 2012",
+        "temporal_value": "2012-01-01T00:00:00+00:00",
+        "aliases": [
+          {
+            "value": "2012",
+            "value_type": "INTEGER",
+            "description": "Año como entero"
+          },
+          {
+            "value": "AÑO_2012",
+            "value_type": "STRING",
+            "description": "Etiqueta en español"
+          },
+          {
+            "value": "YEAR_2012",
+            "value_type": "STRING",
+            "description": "Etiqueta en inglés"
+          }
+        ],
+        "children": []
+      },
+      {
+        "name": "2013",
+        "value": "Y2013",
+        "code": 2013,
+        "value_type": "DATETIME",
+        "description": "Año de reporte 2013",
+        "temporal_value": "2013-01-01T00:00:00+00:00",
+        "aliases": [
+          {
+            "value": "2013",
+            "value_type": "INTEGER",
+            "description": "Año como entero"
+          },
+          {
+            "value": "AÑO_2013",
+            "value_type": "STRING",
+            "description": "Etiqueta en español"
+          },
+          {
+            "value": "YEAR_2013",
+            "value_type": "STRING",
+            "description": "Etiqueta en inglés"
+          }
+        ],
+        "children": []
+      },
+      {
+        "name": "2014",
+        "value": "Y2014",
+        "code": 2014,
+        "value_type": "DATETIME",
+        "description": "Año de reporte 2014",
+        "temporal_value": "2014-01-01T00:00:00+00:00",
+        "aliases": [
+          {
+            "value": "2014",
+            "value_type": "INTEGER",
+            "description": "Año como entero"
+          },
+          {
+            "value": "AÑO_2014",
+            "value_type": "STRING",
+            "description": "Etiqueta en español"
+          },
+          {
+            "value": "YEAR_2014",
+            "value_type": "STRING",
+            "description": "Etiqueta en inglés"
+          }
+        ],
+        "children": []
+      },
+      {
+        "name": "2015",
+        "value": "Y2015",
+        "code": 2015,
+        "value_type": "DATETIME",
+        "description": "Año de reporte 2015",
+        "temporal_value": "2015-01-01T00:00:00+00:00",
+        "aliases": [
+          {
+            "value": "2015",
+            "value_type": "INTEGER",
+            "description": "Año como entero"
+          },
+          {
+            "value": "AÑO_2015",
+            "value_type": "STRING",
+            "description": "Etiqueta en español"
+          },
+          {
+            "value": "YEAR_2015",
+            "value_type": "STRING",
+            "description": "Etiqueta en inglés"
+          }
+        ],
+        "children": []
+      },
+      {
+        "name": "2016",
+        "value": "Y2016",
+        "code": 2016,
+        "value_type": "DATETIME",
+        "description": "Año de reporte 2016",
+        "temporal_value": "2016-01-01T00:00:00+00:00",
+        "aliases": [
+          {
+            "value": "2016",
+            "value_type": "INTEGER",
+            "description": "Año como entero"
+          },
+          {
+            "value": "AÑO_2016",
+            "value_type": "STRING",
+            "description": "Etiqueta en español"
+          },
+          {
+            "value": "YEAR_2016",
+            "value_type": "STRING",
+            "description": "Etiqueta en inglés"
+          }
+        ],
+        "children": []
+      },
+      {
+        "name": "2017",
+        "value": "Y2017",
+        "code": 2017,
+        "value_type": "DATETIME",
+        "description": "Año de reporte 2017",
+        "temporal_value": "2017-01-01T00:00:00+00:00",
+        "aliases": [
+          {
+            "value": "2017",
+            "value_type": "INTEGER",
+            "description": "Año como entero"
+          },
+          {
+            "value": "AÑO_2017",
+            "value_type": "STRING",
+            "description": "Etiqueta en español"
+          },
+          {
+            "value": "YEAR_2017",
+            "value_type": "STRING",
+            "description": "Etiqueta en inglés"
+          }
+        ],
+        "children": []
+      },
+      {
+        "name": "2018",
+        "value": "Y2018",
+        "code": 2018,
+        "value_type": "DATETIME",
+        "description": "Año de reporte 2018",
+        "temporal_value": "2018-01-01T00:00:00+00:00",
+        "aliases": [
+          {
+            "value": "2018",
+            "value_type": "INTEGER",
+            "description": "Año como entero"
+          },
+          {
+            "value": "AÑO_2018",
+            "value_type": "STRING",
+            "description": "Etiqueta en español"
+          },
+          {
+            "value": "YEAR_2018",
+            "value_type": "STRING",
+            "description": "Etiqueta en inglés"
+          }
+        ],
+        "children": []
+      },
+      {
+        "name": "2019",
+        "value": "Y2019",
+        "code": 2019,
+        "value_type": "DATETIME",
+        "description": "Año de reporte 2019",
+        "temporal_value": "2019-01-01T00:00:00+00:00",
+        "aliases": [
+          {
+            "value": "2019",
+            "value_type": "INTEGER",
+            "description": "Año como entero"
+          },
+          {
+            "value": "AÑO_2019",
+            "value_type": "STRING",
+            "description": "Etiqueta en español"
+          },
+          {
+            "value": "YEAR_2019",
+            "value_type": "STRING",
+            "description": "Etiqueta en inglés"
+          }
+        ],
+        "children": []
+      },
+      {
+        "name": "2020",
+        "value": "Y2020",
+        "code": 2020,
+        "value_type": "DATETIME",
+        "description": "Año de reporte 2020",
+        "temporal_value": "2020-01-01T00:00:00+00:00",
+        "aliases": [
+          {
+            "value": "2020",
+            "value_type": "INTEGER",
+            "description": "Año como entero"
+          },
+          {
+            "value": "AÑO_2020",
+            "value_type": "STRING",
+            "description": "Etiqueta en español"
+          },
+          {
+            "value": "YEAR_2020",
+            "value_type": "STRING",
+            "description": "Etiqueta en inglés"
+          }
+        ],
+        "children": []
+      },
+      {
+        "name": "2022",
+        "value": "Y2022",
+        "code": 2022,
+        "value_type": "DATETIME",
+        "description": "Año de reporte 2022",
+        "temporal_value": "2022-01-01T00:00:00+00:00",
+        "aliases": [
+          {
+            "value": "2022",
+            "value_type": "INTEGER",
+            "description": "Año como entero"
+          },
+          {
+            "value": "AÑO_2022",
+            "value_type": "STRING",
+            "description": "Etiqueta en español"
+          },
+          {
+            "value": "YEAR_2022",
+            "value_type": "STRING",
+            "description": "Etiqueta en inglés"
+          }
+        ],
+        "children": []
+      }
+    ]
+  },
+  {
+    "name": "Sustancias Químicas RETC",
+    "value": "SUSTANCIA_RETC",
+    "catalog_type": "INTEREST",
+    "description": "Sustancias químicas reportadas en el RETC con su número CAS y grupo IARC",
+    "items": [
+      {
+        "name": "Benceno",
+        "value": "BENCENO",
+        "code": 1,
+        "value_type": "STRING",
+        "description": "Benceno — CAS 71-43-2, Grupo IARC 1",
+        "temporal_value": null,
+        "aliases": [
+          {
+            "value": "71-43-2",
+            "value_type": "STRING",
+            "description": "Número CAS"
+          },
+          {
+            "value": "IARC_1",
+            "value_type": "STRING",
+            "description": "Clasificación IARC"
+          },
+          {
+            "value": "GRUPO_1",
+            "value_type": "STRING",
+            "description": "Grupo IARC (etiqueta)"
+          },
+          {
+            "value": "benceno",
+            "value_type": "STRING",
+            "description": "Nombre en minúsculas"
+          },
+          {
+            "value": "BENCENO",
+            "value_type": "STRING",
+            "description": "Nombre en mayúsculas"
+          }
+        ],
+        "children": []
+      }
+    ]
+  },
+  {
+    "name": "Umbrales Normativos NOM-RETC",
+    "value": "NOM_UMBRAL_RETC",
+    "catalog_type": "REGULATORY",
+    "description": "Umbrales de reporte obligatorio definidos por la NOM para el RETC",
+    "items": [
+      {
+        "name": "Umbral NOM-EYT (500 kg)",
+        "value": "NOM_EYT_500",
+        "code": 1,
+        "value_type": "FLOAT",
+        "description": "Umbral de reporte NOM — Emisiones y Transferencias (kg/año)",
+        "temporal_value": null,
+        "aliases": [
+          {
+            "value": "500",
+            "value_type": "FLOAT",
+            "description": "Valor numérico en kg"
+          },
+          {
+            "value": "500 kg/año",
+            "value_type": "STRING",
+            "description": "Valor con unidad"
+          },
+          {
+            "value": "NOM_EYT",
+            "value_type": "STRING",
+            "description": "Clave de norma"
+          }
+        ],
+        "children": []
+      },
+      {
+        "name": "Umbral NOM-MPU (2500 kg)",
+        "value": "NOM_MPU_2500",
+        "code": 2,
+        "value_type": "FLOAT",
+        "description": "Umbral de reporte NOM — Manejo, Procesamiento y Uso (kg/año)",
+        "temporal_value": null,
+        "aliases": [
+          {
+            "value": "2500",
+            "value_type": "FLOAT",
+            "description": "Valor numérico en kg"
+          },
+          {
+            "value": "2500 kg/año",
+            "value_type": "STRING",
+            "description": "Valor con unidad"
+          },
+          {
+            "value": "NOM_MPU",
+            "value_type": "STRING",
+            "description": "Clave de norma"
+          }
+        ],
+        "children": []
+      }
+    ]
+  }
+]
