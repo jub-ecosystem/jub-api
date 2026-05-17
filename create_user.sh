@@ -10,7 +10,7 @@ echo "\n"
 echo "Creating scope 'jub' and assigning it to user '$username'"
 echo "\n"
 curl --request POST \
-  --url $auth_url/scopes/ \
+  --url $auth_url/scopes \
   --header 'Content-Type: application/json' \
   --data '{
   "name":"jub"
