@@ -38,6 +38,9 @@ def get_link_manager()->S.GraphLinkManager:
         product_catalog_item_link_repository       = R.ProductToCatalogItemLinkRepository(get_collection(DC.CollectionNames.PRODUCT_CATALOGS_ITEM_LINKS.value)),
         catalog_item_relationship_repository       = R.CatalogItemRelationshipRepository(get_collection(DC.CollectionNames.CATALOG_ITEM_RELATIONSHIPS.value)),
         catalog_item_catalog_alias_link_repository = R.CatalogItemToCatalogAliasLinkRepository(get_collection(DC.CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value)),
+        observatory_service_link_repository        = R.ObservatoryToServiceLinkRepository(get_collection(DC.CollectionNames.OBSERVATORY_SERVICE_LINKS.value)),
+        observatory_datasource_link_repository     = R.ObservatoryToDataSourceLinkRepository(get_collection(DC.CollectionNames.OBSERVATORY_DATASOURCE_LINKS.value)),
+        product_product_link_repository            = R.ProductToProductLinkRepository(get_collection(DC.CollectionNames.PRODUCT_PRODUCT_LINKS.value)),
     )
     return graph_link_manager
 
@@ -59,6 +62,9 @@ def get_search_service()->S.SearchService:
         catalog_repository = R.CatalogsRepository(get_collection(DC.CollectionNames.CATALOGS.value)),
         data_records_repository= R.DataRecordsRepository(get_collection(DC.CollectionNames.DATA_RECORDS.value))
 
+    )
+    service.suggestion_repository = R.ObservatorySearchSuggestionRepository(
+        get_collection(DC.CollectionNames.OBSERVATORY_SEARCH_SUGGESTIONS.value)
     )
     return service
 
@@ -89,7 +95,8 @@ def get_product_service(link_manager: S.GraphLinkManager=Depends(get_link_manage
     repository = R.ProductsRepository(collection= collection)
     service = S.ProductService(
         product_repository = repository,
-        link_manager       = link_manager
+        link_manager       = link_manager,
+        storage            = get_storage_backend(),
     )
     return service
 
@@ -123,12 +130,16 @@ def get_observatories_service(graph_link_manager: S.GraphLinkManager=Depends(get
     product_repository                     = R.ProductsRepository(products_collection)
     observatory_product_link_repository    = R.ObservatoryToProductLinkRepository(observatory_to_product_link_collection)
     review_repository                      = R.ReviewRepository(get_collection(DC.CollectionNames.OBSERVATORY_REVIEWS.value))
+    service_repository                     = R.ServiceRepository(get_collection(DC.CollectionNames.SERVICES.value))
+    datasource_repository                  = R.DataSourceRepository(get_collection(DC.CollectionNames.DATA_SOURCES.value))
     service                                = S.ObservatoriesService(
         graph_link_manager                  = graph_link_manager,
         observatory_repository              = repository,
         observatory_product_link_repository = observatory_product_link_repository,
         product_repository                  = product_repository,
         review_repository                   = review_repository,
+        service_repository                  = service_repository,
+        datasource_repository               = datasource_repository,
     )
     return service
 
@@ -207,10 +218,11 @@ def get_tasks_service(
     return service
 
 
-def get_data_ingestion_service() -> S.DataIngestionService:
+def get_data_ingestion_service(link_manager: S.GraphLinkManager = Depends(get_link_manager)) -> S.DataIngestionService:
     return S.DataIngestionService(
-        source_repo = R.DataSourceRepository(get_collection(DC.CollectionNames.DATA_SOURCES.value)),
-        record_repo = R.DataRecordsRepository(get_collection(DC.CollectionNames.DATA_RECORDS.value)),
+        source_repo  = R.DataSourceRepository(get_collection(DC.CollectionNames.DATA_SOURCES.value)),
+        record_repo  = R.DataRecordsRepository(get_collection(DC.CollectionNames.DATA_RECORDS.value)),
+        link_manager = link_manager,
     )
 
 
@@ -250,18 +262,23 @@ def get_workflow_service() -> S.WorkflowService:
     )
 
 
-def get_service_x_service() -> S.ServiceXService:
+def get_service_x_service(link_manager: S.GraphLinkManager = Depends(get_link_manager)) -> S.ServiceXService:
     return S.ServiceXService(
         repo          = R.ServiceRepository(get_collection(DC.CollectionNames.SERVICES.value)),
         workflow_repo = R.WorkflowRepository(get_collection(DC.CollectionNames.WORKFLOWS.value)),
         stage_repo    = R.StageRepository(get_collection(DC.CollectionNames.STAGES.value)),
         pattern_repo  = R.PatternRepository(get_collection(DC.CollectionNames.PATTERNS.value)),
         bb_repo       = R.BuildingBlockRepository(get_collection(DC.CollectionNames.BUILDING_BLOCKS.value)),
+        link_manager  = link_manager,
     )
 
 
 # Storage backend — swap LocalStorageBackend for a cloud implementation in production
-_storage_backend: StorageBackend = LocalStorageBackend()
+_storage_backend: StorageBackend = LocalStorageBackend(
+    base_path  = Cfg.JUB_STORAGE_PATH,
+    max_bytes  = Cfg.JUB_STORAGE_CACHE_MAX_BYTES,
+    ttl        = Cfg.JUB_STORAGE_CACHE_TTL,
+)
 
 def get_storage_backend() -> StorageBackend:
     return _storage_backend

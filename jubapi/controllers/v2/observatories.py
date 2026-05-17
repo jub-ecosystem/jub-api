@@ -1,4 +1,5 @@
 import os
+import time
 from typing import List
 from fastapi import Depends, Query, status
 from fastapi.routing import APIRouter
@@ -192,6 +193,7 @@ async def create_observatory(
     payload: DTO.ObservatoryCreateDTO,
     svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
 ):
+    t0 = time.monotonic()
     obs_id = payload.observatory_id or nanoid(size=12)
     model = M.ObservatoryX(
         observatory_id = obs_id,
@@ -202,11 +204,13 @@ async def create_observatory(
     )
     result = await svc.create_observatory(model)
     if result.is_err:
+        log.error({"action": "controller.observatory.create", "error": str(result.unwrap_err().detail), "input": {"title": payload.title}})
         raise result.unwrap_err().to_http_exception()
-    # Re-fetch to return full DTO with timestamps
     get_result = await svc.get_observatory(result.unwrap())
     if get_result.is_err:
+        log.error({"action": "controller.observatory.create", "error": str(get_result.unwrap_err().detail), "input": {"observatory_id": obs_id}})
         raise get_result.unwrap_err().to_http_exception()
+    log.info({"action": "controller.observatory.create", "duration_ms": int((time.monotonic()-t0)*1000), "result": {"observatory_id": obs_id}})
     return get_result.unwrap()
 
 
@@ -221,20 +225,38 @@ async def list_observatories(
     page_index: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
 ):
+    t0 = time.monotonic()
     result = await svc.get_observatories(limit=limit, page_index=page_index)
     if result.is_err:
+        log.error({"action": "controller.observatory.list", "error": str(result.unwrap_err().detail)})
         raise result.unwrap_err().to_http_exception()
-    return result.unwrap()
+    data = result.unwrap()
+    log.info({"action": "controller.observatory.list", "duration_ms": int((time.monotonic()-t0)*1000), "result": {"count": len(data)}})
+    return data
 
 
-@router.get("/{observatory_id}", response_model=DTO.ObservatoryXDTO)
+@router.post("/details", response_model=List[DTO.ObservatoryStatsDTO])
+async def get_observatory_stats_batch(
+    payload: DTO.ObservatoryStatsBatchRequestDTO,
+    svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
+):
+    t0 = time.monotonic()
+    data = await svc.get_observatory_stats_batch(payload.ids)
+    log.info({"action": "controller.observatory.stats_batch", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"ids_count": len(payload.ids)}, "result": {"count": len(data)}})
+    return data
+
+
+@router.get("/{observatory_id}", response_model=DTO.ObservatoryDetailDTO)
 async def get_observatory(
     observatory_id: str,
     svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
 ):
-    result = await svc.get_observatory(observatory_id)
+    t0 = time.monotonic()
+    result = await svc.get_observatory_detail(observatory_id)
     if result.is_err:
+        log.error({"action": "controller.observatory.get", "error": str(result.unwrap_err().detail), "input": {"observatory_id": observatory_id}})
         raise result.unwrap_err().to_http_exception()
+    log.info({"action": "controller.observatory.get", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"observatory_id": observatory_id}})
     return result.unwrap()
 
 
@@ -244,17 +266,19 @@ async def update_observatory(
     payload: DTO.ObservatoryUpdateDTO,
     svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
 ):
+    t0 = time.monotonic()
     update_data = {k: v for k, v in payload.model_dump().items() if v is not None}
     if not update_data:
-        # Nothing to update — return the current state unchanged
         result = await svc.get_observatory(observatory_id)
         if result.is_err:
+            log.error({"action": "controller.observatory.update", "error": str(result.unwrap_err().detail), "input": {"observatory_id": observatory_id}})
             raise result.unwrap_err().to_http_exception()
         return result.unwrap()
-
     result = await svc.update_observatory(observatory_id, update_data)
     if result.is_err:
+        log.error({"action": "controller.observatory.update", "error": str(result.unwrap_err().detail), "input": {"observatory_id": observatory_id}})
         raise result.unwrap_err().to_http_exception()
+    log.info({"action": "controller.observatory.update", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"observatory_id": observatory_id}})
     return result.unwrap()
 
 
@@ -263,9 +287,12 @@ async def delete_observatory(
     observatory_id: str,
     svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
 ):
+    t0 = time.monotonic()
     result = await svc.delete_observatory(observatory_id)
     if result.is_err:
+        log.error({"action": "controller.observatory.delete", "error": str(result.unwrap_err().detail), "input": {"observatory_id": observatory_id}})
         raise result.unwrap_err().to_http_exception()
+    log.info({"action": "controller.observatory.delete", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"observatory_id": observatory_id}})
     return DTO.ObservatoryDeleteResponseDTO(deleted=result.unwrap())
 
 
@@ -366,6 +393,106 @@ async def unlink_product(
         raise check.unwrap_err().to_http_exception()
 
     result = await svc.unlink_product(observatory_id, product_id)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+
+
+# ==========================================
+# Service links
+# ==========================================
+
+@router.post("/{observatory_id}/services", status_code=status.HTTP_201_CREATED)
+async def link_service(
+    observatory_id: str,
+    payload: DTO.LinkServiceDTO,
+    svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
+):
+    check = await svc.get_observatory(observatory_id)
+    if check.is_err:
+        raise check.unwrap_err().to_http_exception()
+
+    result = await svc.link_service(observatory_id, payload.service_id)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    return {"observatory_id": observatory_id, "service_id": payload.service_id}
+
+
+@router.get("/{observatory_id}/services", response_model=List[DTO.ServiceSimpleDTO])
+async def list_services(
+    observatory_id: str,
+    svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
+):
+    check = await svc.get_observatory(observatory_id)
+    if check.is_err:
+        raise check.unwrap_err().to_http_exception()
+
+    result = await svc.list_services(observatory_id)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    return result.unwrap()
+
+
+@router.delete("/{observatory_id}/services/{service_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def unlink_service(
+    observatory_id: str,
+    service_id: str,
+    svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
+):
+    check = await svc.get_observatory(observatory_id)
+    if check.is_err:
+        raise check.unwrap_err().to_http_exception()
+
+    result = await svc.unlink_service(observatory_id, service_id)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+
+
+# ==========================================
+# DataSource links
+# ==========================================
+
+@router.post("/{observatory_id}/datasources", status_code=status.HTTP_201_CREATED)
+async def link_datasource(
+    observatory_id: str,
+    payload: DTO.LinkDataSourceDTO,
+    svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
+):
+    check = await svc.get_observatory(observatory_id)
+    if check.is_err:
+        raise check.unwrap_err().to_http_exception()
+
+    result = await svc.link_datasource(observatory_id, payload.source_id)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    return {"observatory_id": observatory_id, "source_id": payload.source_id}
+
+
+@router.get("/{observatory_id}/datasources", response_model=List[DTO.DataSourceDTO])
+async def list_datasources(
+    observatory_id: str,
+    svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
+):
+    check = await svc.get_observatory(observatory_id)
+    if check.is_err:
+        raise check.unwrap_err().to_http_exception()
+
+    result = await svc.list_datasources(observatory_id)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    return result.unwrap()
+
+
+@router.delete("/{observatory_id}/datasources/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def unlink_datasource(
+    observatory_id: str,
+    source_id: str,
+    svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
+):
+    check = await svc.get_observatory(observatory_id)
+    if check.is_err:
+        raise check.unwrap_err().to_http_exception()
+
+    result = await svc.unlink_datasource(observatory_id, source_id)
     if result.is_err:
         raise result.unwrap_err().to_http_exception()
 

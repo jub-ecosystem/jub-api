@@ -1,10 +1,14 @@
 import os
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 from fastapi.middleware.cors import CORSMiddleware
 from jubapi.log.log import Log
-from jubapi.db import connect_to_mongo,close_mongo_connection
+from jubapi.db import connect_to_mongo, close_mongo_connection, get_database
+from jubapi.db.indexes import ensure_indexes
+from jubapi.middlewares import get_storage_backend
+from jubapi.jobs import orphan_check_loop
 from jubapi.controllers.v1 import observatories_router,catalogs_router,products_router
 import jubapi.controllers.v2 as ControllersV2
 import jubapi.config as Cfg
@@ -17,11 +21,36 @@ log       = Log(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Lifespan function for the FastAPI application. This function is used to connect to the MongoDB database when the application starts and to close the connection when the application stops.
-    """
     await connect_to_mongo()
-    yield 
+    await ensure_indexes(get_database())
+
+    orphan_task = None
+    if Cfg.JUB_ORPHAN_CHECK_ENABLED:
+        log.info({
+            "action": "server.startup.orphan_check",
+            "result": {
+                "enabled": True,
+                "interval_seconds": Cfg.JUB_ORPHAN_CHECK_INTERVAL_SECONDS,
+                "delete": Cfg.JUB_ORPHAN_CHECK_DELETE,
+            },
+        })
+        orphan_task = asyncio.create_task(
+            orphan_check_loop(
+                storage  = get_storage_backend(),
+                db       = get_database(),
+                interval = Cfg.JUB_ORPHAN_CHECK_INTERVAL_SECONDS,
+                delete   = Cfg.JUB_ORPHAN_CHECK_DELETE,
+            )
+        )
+    else:
+        log.info({"action": "server.startup.orphan_check", "result": {"enabled": False}})
+
+    yield
+
+    if orphan_task is not None:
+        orphan_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await orphan_task
     await close_mongo_connection()
 
 app = FastAPI(

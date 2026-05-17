@@ -1,4 +1,5 @@
 import os
+import time
 from typing import List
 from fastapi import Depends, status
 from fastapi.routing import APIRouter
@@ -19,24 +20,33 @@ async def register_data_source(
     payload: DTO.DataSourceCreateDTO,
     svc: S.DataIngestionService = Depends(MX.get_data_ingestion_service),
 ):
+    t0 = time.monotonic()
     result = await svc.register_data_source(
+        source_id   = payload.source_id,
         name        = payload.name,
         description = payload.description or "",
         bucket_id   = payload.bucket_id or "",
     )
     if result.is_err:
+        log.error({"action": "controller.datasource.create", "error": str(result.unwrap_err().detail), "input": {"name": payload.name}})
         raise result.unwrap_err().to_http_exception()
-    return DTO.DataSourceDTO.from_model(result.unwrap())
+    source = result.unwrap()
+    log.info({"action": "controller.datasource.create", "duration_ms": int((time.monotonic()-t0)*1000), "result": {"source_id": source.source_id}})
+    return DTO.DataSourceDTO.from_model(source)
 
 
 @router.get("", response_model=List[DTO.DataSourceDTO])
 async def list_data_sources(
     svc: S.DataIngestionService = Depends(MX.get_data_ingestion_service),
 ):
+    t0 = time.monotonic()
     result = await svc.source_repo.find({}, limit=200)
     if result.is_err:
+        log.error({"action": "controller.datasource.list", "error": str(result.unwrap_err().detail)})
         raise result.unwrap_err().to_http_exception()
-    return [DTO.DataSourceDTO.from_model(s) for s in result.unwrap()]
+    data = [DTO.DataSourceDTO.from_model(s) for s in result.unwrap()]
+    log.info({"action": "controller.datasource.list", "duration_ms": int((time.monotonic()-t0)*1000), "result": {"count": len(data)}})
+    return data
 
 
 @router.get("/{source_id}", response_model=DTO.DataSourceDTO)
@@ -44,9 +54,28 @@ async def get_data_source(
     source_id: str,
     svc: S.DataIngestionService = Depends(MX.get_data_ingestion_service),
 ):
+    t0 = time.monotonic()
     result = await svc.source_repo.get_by_id(source_id)
     if result.is_err:
+        log.error({"action": "controller.datasource.get", "error": str(result.unwrap_err().detail), "input": {"source_id": source_id}})
         raise result.unwrap_err().to_http_exception()
+    log.info({"action": "controller.datasource.get", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"source_id": source_id}})
+    return DTO.DataSourceDTO.from_model(result.unwrap())
+
+
+@router.put("/{source_id}", response_model=DTO.DataSourceDTO)
+async def update_data_source(
+    source_id: str,
+    payload: DTO.DataSourceUpdateDTO,
+    svc: S.DataIngestionService = Depends(MX.get_data_ingestion_service),
+):
+    t0 = time.monotonic()
+    data = {k: v for k, v in payload.model_dump().items() if v is not None}
+    result = await svc.update_data_source(source_id, data)
+    if result.is_err:
+        log.error({"action": "controller.datasource.update", "error": str(result.unwrap_err().detail), "input": {"source_id": source_id}})
+        raise result.unwrap_err().to_http_exception()
+    log.info({"action": "controller.datasource.update", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"source_id": source_id}})
     return DTO.DataSourceDTO.from_model(result.unwrap())
 
 
@@ -55,13 +84,15 @@ async def delete_data_source(
     source_id: str,
     svc: S.DataIngestionService = Depends(MX.get_data_ingestion_service),
 ):
-    # Count records before deletion so we can report them
+    t0 = time.monotonic()
     count_result = await svc.record_repo.count({"source_id": source_id})
     records_removed = count_result.unwrap() if count_result.is_ok else 0
 
     result = await svc.delete_data_source(source_id)
     if result.is_err:
+        log.error({"action": "controller.datasource.delete", "error": str(result.unwrap_err().detail), "input": {"source_id": source_id}})
         raise result.unwrap_err().to_http_exception()
+    log.info({"action": "controller.datasource.delete", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"source_id": source_id}, "result": {"records_removed": records_removed}})
     return DTO.DataSourceDeleteResponseDTO(deleted=result.unwrap(), records_removed=records_removed)
 
 
@@ -71,6 +102,7 @@ async def ingest_records(
     records: List[DTO.DataRecordCreateDTO],
     svc: S.DataIngestionService = Depends(MX.get_data_ingestion_service),
 ):
+    t0 = time.monotonic()
     models = [
         M.DataRecord(
             record_id              = r.record_id,
@@ -85,7 +117,9 @@ async def ingest_records(
     ]
     result = await svc.ingest_parsed_records(source_id, models)
     if result.is_err:
+        log.error({"action": "controller.datasource.ingest_records", "error": str(result.unwrap_err().detail), "input": {"source_id": source_id, "count": len(records)}})
         raise result.unwrap_err().to_http_exception()
+    log.info({"action": "controller.datasource.ingest_records", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"source_id": source_id}, "result": {"inserted": result.unwrap()}})
     return {"inserted": result.unwrap()}
 
 
@@ -95,12 +129,14 @@ async def query_records(
     payload: DTO.DataSourceQueryDTO,
     svc: S.DataQueryService = Depends(MX.get_data_query_service),
 ):
+    t0 = time.monotonic()
     result = await svc.query(source_id, payload.query)
     if result.is_err:
+        log.error({"action": "controller.datasource.query", "error": str(result.unwrap_err().detail), "input": {"source_id": source_id, "query": payload.query}})
         raise result.unwrap_err().to_http_exception()
     records = result.unwrap()
-    # Paginate in-memory after the DB query (filter already applied)
     skip  = payload.skip or 0
     limit = payload.limit or 100
-    
-    return records[skip: skip + limit]
+    data  = records[skip: skip + limit]
+    log.info({"action": "controller.datasource.query", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"source_id": source_id, "query": payload.query}, "result": {"count": len(data)}})
+    return data
