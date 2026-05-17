@@ -4,6 +4,7 @@ Unit tests for the Service/Workflow domain:
   WorkflowService, ServiceXService (CRUD + index + DSL search).
 """
 import pytest
+from unittest.mock import MagicMock, AsyncMock
 import jubapi.repositories.v2 as R
 import jubapi.services.v2 as S
 import jubapi.dto.v2 as DTO
@@ -22,12 +23,15 @@ async def svcs(test_db):
     workflow_repo = R.WorkflowRepository(test_db[CollectionNames.WORKFLOWS.value])
     service_repo  = R.ServiceRepository(test_db[CollectionNames.SERVICES.value])
 
+    link_mock = MagicMock()
+    link_mock.observatory_service_link_repository.collection.delete_many = AsyncMock(return_value=None)
+
     return {
         "bb":       S.BuildingBlockService(bb_repo),
         "pattern":  S.PatternService(pattern_repo),
         "stage":    S.StageService(stage_repo),
         "workflow": S.WorkflowService(workflow_repo, stage_repo),
-        "service":  S.ServiceXService(service_repo, workflow_repo, stage_repo, pattern_repo, bb_repo),
+        "service":  S.ServiceXService(service_repo, workflow_repo, stage_repo, pattern_repo, bb_repo, link_mock),
     }
 
 

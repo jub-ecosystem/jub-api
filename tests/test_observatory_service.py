@@ -26,10 +26,15 @@ async def repos(test_db):
         product_catalog_item_link_repository       = R.ProductToCatalogItemLinkRepository(test_db[CollectionNames.PRODUCT_CATALOGS_ITEM_LINKS.value]),
         catalog_item_relationship_repository       = R.CatalogItemRelationshipRepository(test_db[CollectionNames.CATALOG_ITEM_RELATIONSHIPS.value]),
         catalog_item_catalog_alias_link_repository = R.CatalogItemToCatalogAliasLinkRepository(test_db[CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value]),
+        observatory_service_link_repository        = R.ObservatoryToServiceLinkRepository(test_db[CollectionNames.OBSERVATORY_SERVICE_LINKS.value]),
+        observatory_datasource_link_repository     = R.ObservatoryToDataSourceLinkRepository(test_db[CollectionNames.OBSERVATORY_DATASOURCE_LINKS.value]),
+        product_product_link_repository            = R.ProductToProductLinkRepository(test_db[CollectionNames.PRODUCT_PRODUCT_LINKS.value]),
     )
     return {
         "obs":         R.ObservatoriesRepository(test_db[CollectionNames.OBSERVATORIES.value]),
         "products":    R.ProductsRepository(test_db[CollectionNames.PRODUCTS.value]),
+        "services":    R.ServiceRepository(test_db[CollectionNames.SERVICES.value]),
+        "datasources": R.DataSourceRepository(test_db[CollectionNames.DATA_SOURCES.value]),
         "link_manager": link_manager,
         "review": R.ReviewRepository(test_db[CollectionNames.OBSERVATORY_REVIEWS.value])
     }
@@ -42,7 +47,9 @@ async def obs_service(repos):
         observatory_product_link_repository = repos["link_manager"].observatory_product_link_repository,
         product_repository                  = repos["products"],
         graph_link_manager                  = repos["link_manager"],
-        review_repository                   = repos["review"]
+        review_repository                   = repos["review"],
+        service_repository                  = repos["services"],
+        datasource_repository               = repos["datasources"],
     )
 
 

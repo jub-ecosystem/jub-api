@@ -188,6 +188,7 @@ OBSERVATORIES = [
 
 PRODUCTS_BY_OBS: Dict[str, List[Dict]] = {
     "obs_mortalidad_mx": [
+        # Single-dimension products (kept for backwards compatibility)
         {
             "product_id":  "prod_mort_causa_estado",
             "name":        "Mortalidad por Causa y Estado",
@@ -205,6 +206,20 @@ PRODUCTS_BY_OBS: Dict[str, List[Dict]] = {
             "name":        "Tendencia de Mortalidad 2015-2023",
             "description": "Serie temporal de mortalidad. Incluye el impacto del COVID-19 en 2020-2021.",
             "tag_catalogs": ["TEMPORAL_ANIOS", "CAUSA_DEFUNCION"],
+        },
+        # Cross-dimensional products — needed so VS(MX).VT(year) queries return results.
+        # Each product covers SPATIAL + TEMPORAL + one interest dimension simultaneously.
+        {
+            "product_id":  "prod_mort_mx_anual_sexo",
+            "name":        "Mortalidad MX Anual por Sexo",
+            "description": "Mortalidad nacional por año y sexo. Cubre VS(MX) y VT(año) juntos.",
+            "tag_catalogs": ["SPATIAL_MX", "TEMPORAL_ANIOS", "SEX"],
+        },
+        {
+            "product_id":  "prod_mort_mx_anual_causa",
+            "name":        "Mortalidad MX Anual por Causa",
+            "description": "Mortalidad nacional por año y causa. Cubre VS(MX) y VT(año) juntos.",
+            "tag_catalogs": ["SPATIAL_MX", "TEMPORAL_ANIOS", "CAUSA_DEFUNCION"],
         },
     ],
     "obs_cancer_mx": [
@@ -226,6 +241,19 @@ PRODUCTS_BY_OBS: Dict[str, List[Dict]] = {
             "description": "Distribucion del cancer por sexo y grupo etario.",
             "tag_catalogs": ["SEX", "AGE_GROUP", "CIE10_CANCER"],
         },
+        # Cross-dimensional
+        {
+            "product_id":  "prod_cancer_mx_anual_cie10",
+            "name":        "Cancer MX Anual por Tipo CIE-10",
+            "description": "Incidencia de cancer por estado, año y tipo CIE-10. Cubre VS(MX) y VT(año) juntos.",
+            "tag_catalogs": ["SPATIAL_MX", "TEMPORAL_ANIOS", "CIE10_CANCER"],
+        },
+        {
+            "product_id":  "prod_cancer_mx_anual_sexo",
+            "name":        "Cancer MX Anual por Sexo",
+            "description": "Mortalidad oncologica por estado, año y sexo. Cubre VS(MX) y VT(año) juntos.",
+            "tag_catalogs": ["SPATIAL_MX", "TEMPORAL_ANIOS", "SEX"],
+        },
     ],
     "obs_cronicas_mx": [
         {
@@ -245,6 +273,19 @@ PRODUCTS_BY_OBS: Dict[str, List[Dict]] = {
             "name":        "Enfermedades Cronicas por Derechohabiencia",
             "description": "Mortalidad cronica segun afiliacion al sistema de salud.",
             "tag_catalogs": ["DERECHOHABIENCIA", "CAUSA_DEFUNCION"],
+        },
+        # Cross-dimensional
+        {
+            "product_id":  "prod_cronica_mx_anual_causa",
+            "name":        "Enfermedades Cronicas MX Anual por Causa",
+            "description": "Tendencia de cronicas por estado, año y causa. Cubre VS(MX) y VT(año) juntos.",
+            "tag_catalogs": ["SPATIAL_MX", "TEMPORAL_ANIOS", "CAUSA_DEFUNCION"],
+        },
+        {
+            "product_id":  "prod_cronica_mx_anual_derecho",
+            "name":        "Enfermedades Cronicas MX Anual por Derechohabiencia",
+            "description": "Mortalidad cronica por estado, año y derechohabiencia.",
+            "tag_catalogs": ["SPATIAL_MX", "TEMPORAL_ANIOS", "DERECHOHABIENCIA"],
         },
     ],
 }

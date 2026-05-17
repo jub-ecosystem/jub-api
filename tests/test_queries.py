@@ -35,7 +35,10 @@ async def services(test_db):
         catalog_item_relationship_repository       = R.CatalogItemRelationshipRepository(test_db[CollectionNames.CATALOG_ITEM_RELATIONSHIPS.value]),
         catalog_catalog_item_link_repository       = R.CatalogToCatalogItemLinkRepository(test_db[CollectionNames.CATALOG_CATALOG_ITEM_LINKS.value]),
         catalog_item_catalog_alias_link_repository = R.CatalogItemToCatalogAliasLinkRepository(test_db[CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value]),
-        observatory_catalog_link_repository        = R.ObservatoryToCatalogLinkRepository(test_db[CollectionNames.OBSERVATORY_CATALOG_LINKS.value])
+        observatory_catalog_link_repository        = R.ObservatoryToCatalogLinkRepository(test_db[CollectionNames.OBSERVATORY_CATALOG_LINKS.value]),
+        observatory_service_link_repository        = R.ObservatoryToServiceLinkRepository(test_db[CollectionNames.OBSERVATORY_SERVICE_LINKS.value]),
+        observatory_datasource_link_repository     = R.ObservatoryToDataSourceLinkRepository(test_db[CollectionNames.OBSERVATORY_DATASOURCE_LINKS.value]),
+        product_product_link_repository            = R.ProductToProductLinkRepository(test_db[CollectionNames.PRODUCT_PRODUCT_LINKS.value]),
     )
     search_service = S.SearchService(
         observatory_product_link_repository        = link_manager.observatory_product_link_repository,
@@ -63,7 +66,9 @@ async def services(test_db):
             observatory_repository              = observatory_repository,
             product_repository                  = product_repository,
             graph_link_manager                  = link_manager,
-            review_repository                   = review_repository
+            review_repository                   = review_repository,
+            service_repository                  = R.ServiceRepository(test_db[CollectionNames.SERVICES.value]),
+            datasource_repository               = R.DataSourceRepository(test_db[CollectionNames.DATA_SOURCES.value]),
         ),
         "search": search_service,
         "db": test_db # Passed for direct assertions
