@@ -134,6 +134,34 @@ Deletes the observatory and all its catalog/product links (cascade).
 
 ### `GET /observatories/{id}/products` — List linked products
 
+### `POST /observatories/{id}/products/{product_id}` — Link an existing product
+
+### `DELETE /observatories/{id}/products/{product_id}` — Unlink product
+
+### `GET /observatories/{id}/services` — List linked services
+
+Response: `ServiceSimpleDTO[]` — `service_id`, `name`, `description`, `provider`, `public`.
+
+### `POST /observatories/{id}/services` — Link an existing service
+
+```json
+{ "service_id": "svc_001" }
+```
+
+### `DELETE /observatories/{id}/services/{service_id}` — Unlink service
+
+### `GET /observatories/{id}/datasources` — List linked data sources
+
+Response: `DataSourceDTO[]` — `source_id`, `name`, `description`, `format`, `bucket_id`, `connection_uri`.
+
+### `POST /observatories/{id}/datasources` — Link an existing data source
+
+```json
+{ "source_id": "src_001" }
+```
+
+### `DELETE /observatories/{id}/datasources/{source_id}` — Unlink data source
+
 ---
 
 ## Products — `/products`
@@ -177,6 +205,92 @@ Poll `GET /tasks/{job_id}` for status.
 ```
 
 ### `DELETE /products/{id}/tags/{catalog_item_id}` — Remove tag
+
+---
+
+### `GET /products/filter` — Filter products by metadata
+
+Returns products whose `metadata` matches **all** supplied query parameters. Parameters are combined with AND. Any string key is accepted; values are matched exactly.
+
+**Query parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `limit` | int | Max results (default 100, max 500) |
+| `<any key>` | string | Metadata key to match (e.g. `extension=csv`) |
+
+**Example requests**
+
+```http
+GET /api/v2/products/filter?extension=csv
+GET /api/v2/products/filter?extension=csv&format=parquet&limit=50
+```
+
+**Response `200`** — `ProductSimpleDTO[]`
+
+```json
+[
+  {
+    "product_id": "p_001",
+    "name": "Cancer Incidence 2024",
+    "description": "Annual rates by state",
+    "metadata": { "extension": "csv", "format": "parquet" },
+    "created_at": "2024-01-01T00:00:00Z",
+    "updated_at": "2024-01-01T00:00:00Z"
+  }
+]
+```
+
+---
+
+### `GET /products/{id}/related` — List related products
+
+Returns all products that have been explicitly related to this product. The relationship is symmetric — relating A to B means both A and B appear in each other's related list.
+
+**Response `200`** — `ProductSimpleDTO[]`
+
+```json
+[
+  {
+    "product_id": "p_002",
+    "name": "Mortality 2024",
+    "description": "",
+    "metadata": {},
+    "created_at": "2024-01-01T00:00:00Z",
+    "updated_at": "2024-01-01T00:00:00Z"
+  }
+]
+```
+
+---
+
+### `POST /products/{id}/related` — Add a related product
+
+Creates a symmetric relationship between two products. Sending the same pair twice is safe (idempotent).
+
+**Request body**
+
+```json
+{ "related_product_id": "p_002" }
+```
+
+**Response `201`**
+
+```json
+{ "product_id": "p_001", "related_product_id": "p_002" }
+```
+
+| Status | Meaning |
+|---|---|
+| `404` | Either product does not exist |
+
+---
+
+### `DELETE /products/{id}/related/{related_id}` — Remove a relationship
+
+Removes the relationship between two products. If the relationship does not exist this is a no-op.
+
+**Response `204`** — no body
 
 ---
 
