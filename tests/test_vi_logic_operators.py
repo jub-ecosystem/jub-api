@@ -107,7 +107,7 @@ async def seed(services):
         await cat_svc.link_manager.link_catalog_to_item("cat_age", iid)
 
     # Observatory
-    obs = M.ObservatoryX(observatory_id="obs_logic_test", name="Logic Test Obs", description="")
+    obs = M.ObservatoryX(title="Logic Test Obs", observatory_id="obs_logic_test", name="Logic Test Obs", description="")
     await services["product"].link_manager.observatory_product_link_repository.collection.database[
         CN.OBSERVATORIES.value
     ].insert_one(obs.model_dump())

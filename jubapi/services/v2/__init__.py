@@ -3485,7 +3485,14 @@ class DataIngestionService:
         self.record_repo = record_repo
         self.link_manager = link_manager
 
-    async def register_data_source(self,source_id:str, name: str, description: str, bucket_id: str="", ball_id: str="") -> Result[M.DataSource, EX.JubError]:
+    async def register_data_source(
+        self, 
+        name: str, 
+        description: str,
+        source_id: Optional[str] = None,
+        bucket_id: str = "",
+        ball_id: str = ""
+    ) -> Result[M.DataSource, EX.JubError]:
         """
         Registers the CSV file metadata in the database.
         """
