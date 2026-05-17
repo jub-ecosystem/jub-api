@@ -1,9 +1,11 @@
 from pydantic import BaseModel,Field
 from typing import Optional,List,Dict
+import os
 import jubapi.models.v2 as M
 import jubapi.enums.v2 as ENUMS
 import datetime as DT
 # from jubapi.models.v2 import ObservatoryX,CatalogX
+
 
 class TasksStatsDTO(BaseModel):
     pending: int = Field(default=0, description="Number of tasks currently pending")
@@ -49,6 +51,8 @@ class SearchQueryDTO(BaseModel):
     observatory_id: Optional[str] = Field(default=None, description="Optional observatory context for the search query")
     limit: Optional[int] = Field(default=100, ge=1, le=1000, description="Maximum number of search results to return")
     skip: Optional[int] = Field(default=0, ge=0, description="Number of search results to skip for pagination")
+    strict: bool = Field(default=True, description="When False, clauses that resolve to zero matches are skipped instead of returning empty results")
+    no_cache: bool = Field(default=False, description="When True, bypasses the cache and always performs a fresh search")
 
 class VariableMetadataDTO(BaseModel):
     code:Optional[int] = Field(default=None, description="Optional code associated with the catalog item, if applicable")
@@ -67,7 +71,8 @@ class ProductXDTO(BaseModel):
     spatial_variable:VariableMetadataDTO = Field(default_factory=VariableMetadataDTO)
     temporal_variable:VariableMetadataDTO = Field(default_factory=VariableMetadataDTO)
     interest_variable:List[VariableMetadataDTO] = Field(default_factory=list)
-    # metadata: ItemMetadataDTO = Field(default_factory=ItemMetadataDTO)
+    metadata: Dict[str, str] = Field(default_factory=dict)
+    observatory_ids: List[str] = Field(default_factory=list)
     created_at: str
     updated_at: str
 
@@ -75,12 +80,13 @@ class ProductXDTO(BaseModel):
     @staticmethod
     def from_model(model:M.ProductX) -> 'ProductXDTO':
         return ProductXDTO(
-            product_id = model.product_id,
-            name       = model.name,
-            # code= model.,
-            description= model.description,
-            created_at = model.created_at.isoformat(),
-            updated_at = model.updated_at.isoformat()
+            product_id  = model.product_id,
+            name        = model.name,
+            description = model.description,
+            metadata    = model.metadata or {},
+            created_at  = model.created_at.isoformat(),
+            updated_at  = model.updated_at.isoformat(),
+            # observatory_id=model.observatory_id
         )
 
 class ObservatoryXDTO(BaseModel):
@@ -357,16 +363,19 @@ class PlotQueryDTO(BaseModel):
         default="bar",
         description="ECharts series type: 'bar', 'line', or 'scatter'.",
     )
+    strict: bool = Field(default=True, description="When False, clauses that resolve to zero matches are skipped instead of returning empty results")
 
 
 # 1. The Alias DTO
 class CatalogItemAliasCreateDTO(BaseModel):
+    alias_id: Optional[str] = Field(default=None, description="Custom ID for the alias; auto-generated if omitted.")
     value: str
     value_type: ENUMS.CatalogItemValueType
     description: Optional[str] = Field(default="", description="Description of the alias")
 
 # 2. The Item DTO (Notice it contains lists of Aliases AND Children)
 class CatalogItemCreateDTO(BaseModel):
+    catalog_item_id: Optional[str] = Field(default=None, description="Custom ID for the catalog item; auto-generated if omitted.")
     name: str
     value: str # Will be validated to UpperSnakeStr in your actual model
     code: int
@@ -382,6 +391,7 @@ class CatalogItemCreateDTO(BaseModel):
 
 # 3. The Root Catalog DTO
 class CatalogCreateDTO(BaseModel):
+    catalog_id:Optional[str] = Field(default=None, description="Custom ID for the catalog; auto-generated if omitted.")
     name: str
     value: str 
     catalog_type: ENUMS.CatalogType
@@ -438,11 +448,24 @@ class CatalogSummaryDTO(BaseModel):
     catalog_type: ENUMS.CatalogType
 
 
+class CatalogUpdateDTO(BaseModel):
+    name: Optional[str] = Field(default=None, description="Updated catalog name")
+    description: Optional[str] = Field(default=None, description="Updated description")
+
+
 # ==========================================
 # DATA INGESTION DTOs
 # ==========================================
 
+class DataSourceUpdateDTO(BaseModel):
+    name: Optional[str] = Field(default=None, description="Updated data source name")
+    description: Optional[str] = Field(default=None, description="Updated description")
+    connection_uri: Optional[str] = Field(default=None, description="Updated connection string")
+    bucket_id: Optional[str] = Field(default=None, description="Updated bucket ID")
+
+
 class DataSourceCreateDTO(BaseModel):
+    source_id: Optional[str] = Field(default=None, description="Unique identifier for the data source, auto-generated if not provided.")
     name: str = Field(..., description="Name of the dataset.")
     description: Optional[str] = Field(default="", description="Human-readable description.")
     format: ENUMS.DataSourceFormatEnum = Field(default=ENUMS.DataSourceFormatEnum.CSV)
@@ -450,7 +473,7 @@ class DataSourceCreateDTO(BaseModel):
     connection_uri: Optional[str] = Field(default=None, description="Connection string for databases.")
 
 class DataSourceDTO(BaseModel):
-    source_id: str
+    source_id: Optional[str] = Field(default=None, description="Unique identifier for the data source, auto-generated if not provided.")
     name: str
     description: str = Field(default="", description="Human-readable description.")
     format: ENUMS.DataSourceFormatEnum
@@ -532,8 +555,66 @@ class LinkProductDTO(BaseModel):
     product_id: str
 
 
+class LinkServiceDTO(BaseModel):
+    service_id: str
+
+
+class LinkDataSourceDTO(BaseModel):
+    source_id: str
+
+
+class ServiceSimpleDTO(BaseModel):
+    service_id: str
+    name: str
+    description: Optional[str] = Field(default="")
+    provider: Optional[str] = Field(default=None)
+    public: bool = False
+
+    @staticmethod
+    def from_model(model: M.ServiceX) -> 'ServiceSimpleDTO':
+        return ServiceSimpleDTO(
+            service_id  = model.service_id,
+            name        = model.name,
+            description = model.description or "",
+            provider    = model.provider.value if model.provider else None,
+            public      = model.public,
+        )
+
+
 class ObservatoryDeleteResponseDTO(BaseModel):
     deleted: bool
+
+
+class ServiceSnapshotDTO(BaseModel):
+    service_id: str
+    name: str
+    provider: Optional[str] = None
+
+
+class DataSourceSnapshotDTO(BaseModel):
+    source_id: str
+    name: str
+
+
+class ObservatoryDetailDTO(ObservatoryXDTO):
+    services: List[ServiceSnapshotDTO] = Field(default_factory=list)
+    data_sources: List[DataSourceSnapshotDTO] = Field(default_factory=list)
+    avg_rating: float = Field(default=0.0, description="Average user rating for this observatory, from 0.0 to 5.0")
+    review_count: int = Field(default=0, description="Total number of user reviews for this observatory")
+
+
+
+
+class ObservatoryStatsDTO(BaseModel):
+    observatory_id: str = Field(..., description="ID of the observatory these stats pertain to")
+    avg_rating: float = Field(default=0.0, description="Average user rating for this observatory, from 0.0 to 5.0")
+    review_count: int = Field(default=0, description="Total number of user reviews for this observatory")
+    services: List[ServiceSnapshotDTO] = Field(default_factory=list, description="List of services linked to this observatory, with basic info for each")
+    data_sources: List[DataSourceSnapshotDTO] = Field(default_factory=list, description="List of data sources linked to this observatory, with basic info for each")
+
+
+class ObservatoryStatsBatchRequestDTO(BaseModel):
+    ids: List[str] = Field(..., min_length=1, max_length=50, description="List of observatory IDs to fetch stats for.")
 
 
 # ==========================================
@@ -550,17 +631,19 @@ class ProductCreateDTO(BaseModel):
         default_factory=list,
         description="catalog_item_ids to tag this product with. These drive DSL-based product discovery.",
     )
+    metadata: Optional[Dict[str, str]] = Field(default_factory=dict, description="Arbitrary key-value pairs for client use.")
 
 
 class ProductUpdateDTO(BaseModel):
     name: Optional[str] = Field(default=None, description="Updated name of the product")
     description: Optional[str] = Field(default=None, description="Updated description of the product")
-
+    metadata: Optional[Dict[str, str]] = Field(default=None, description="Updated metadata for the product as key-value pairs")
 
 class ProductSimpleDTO(BaseModel):
     product_id: str
     name: str
     description: str = Field(default="", description="Description of the product")
+    metadata: Dict[str, str] = Field(default_factory=dict)
     created_at: str
     updated_at: str
 
@@ -570,6 +653,7 @@ class ProductSimpleDTO(BaseModel):
             product_id  = model.product_id,
             name        = model.name,
             description = model.description or "",
+            metadata    = model.metadata or {},
             created_at  = model.created_at.isoformat(),
             updated_at  = model.updated_at.isoformat(),
         )
@@ -579,8 +663,31 @@ class TagProductDTO(BaseModel):
     catalog_item_ids: List[str] = Field(..., min_length=1)
 
 
+class RelateProductDTO(BaseModel):
+    """Payload for creating a relationship between two products."""
+    related_product_id: str = Field(..., description="ID of the product to relate to.")
+
+
 class ProductDeleteResponseDTO(BaseModel):
     deleted: bool
+
+
+class SearchSuggestionItemDTO(BaseModel):
+    query: str
+    hit_count: int
+
+class SearchSuggestionsResponseDTO(BaseModel):
+    observatory_id: str
+    suggestions: List[SearchSuggestionItemDTO]
+
+class ObservatorySearchSuggestionsResponseDTO(BaseModel):
+    suggestions: List[SearchSuggestionItemDTO]
+
+
+class BulkTagFromCatalogResponseDTO(BaseModel):
+    product_id: str
+    catalog_id: str
+    linked_items: int
 
 
 # ==========================================
@@ -593,10 +700,12 @@ class CatalogItemStandaloneCreateDTO(BaseModel):
     value: str
     code: int
     value_type: ENUMS.CatalogItemValueType
+    catalog_type: Optional[ENUMS.CatalogType] = Field(default=None, description="The type of the catalog this item belongs to (optional, used for validation and query purposes).")
     temporal_value: Optional[DT.datetime] = Field(default=None)
     description: Optional[str] = Field(default="")
     catalog_id: str = Field(..., description="The catalog this item belongs to.")
     parent_item_id: Optional[str] = Field(default=None, description="Optional parent item ID for hierarchical relationships.")
+    metadata: Optional[Dict[str, str]] = Field(default_factory=dict, description="Additional metadata for the catalog item as key-value pairs.")
 
 
 class CatalogItemUpdateDTO(BaseModel):

@@ -4,7 +4,7 @@ from jubapi.repositories.v2.base import BaseRepository
 from motor.motor_asyncio import AsyncIOMotorCollection as Collection
 import datetime as DT
 import jubapi.models.v2 as M
-from typing import List, Dict, Optional,Set
+from typing import List, Dict, Optional, Set, Tuple
 from option import Result,Err,Ok
 import jubapi.errors as EX
 from jubapi.log.log import Log
@@ -139,6 +139,26 @@ class ReviewRepository(BaseRepository[M.Review]):
         except Exception as e:
             return Err(EX.UnknownError(str(e)))
 
+    async def get_rating_stats(self, observatory_id: str) -> Tuple[float, int]:
+        import time as _time
+        t0 = _time.monotonic()
+        pipeline = [
+            {"$match": {"observatory_id": observatory_id}},
+            {"$group": {"_id": None, "avg": {"$avg": "$rating"}, "count": {"$sum": 1}}},
+        ]
+        try:
+            cursor = self.collection.aggregate(pipeline)
+            docs = await cursor.to_list(length=1)
+            if not docs:
+                return (0.0, 0)
+            doc = docs[0]
+            result = (round(float(doc["avg"]), 2), int(doc["count"]))
+            L.info({"action": "repository.review.get_rating_stats", "duration_ms": int((_time.monotonic()-t0)*1000), "input": {"observatory_id": observatory_id}, "result": {"avg_rating": result[0], "review_count": result[1]}})
+            return result
+        except Exception as e:
+            L.error({"action": "repository.review.get_rating_stats", "error": str(e), "input": {"observatory_id": observatory_id}})
+            return (0.0, 0)
+
 
 class ObservatoryToProductLinkRepository(BaseRepository[M.ObservatoryToProductLink]):
     def __init__(self, collection: Collection):
@@ -175,7 +195,27 @@ class ObservatoryToCatalogLinkRepository(BaseRepository[M.ObservatoryToCatalogLi
         except Exception as e:
             return Err(EX.JubError.from_exception(e))
 
-# 3. Catalog -> Catalog Item
+# 3. Observatory -> Service
+class ObservatoryToServiceLinkRepository(BaseRepository[M.ObservatoryToServiceLink]):
+    def __init__(self, collection: Collection):
+        super().__init__(collection, M.ObservatoryToServiceLink, "observatory_id")
+
+    async def get_service_ids_by_observatory_id(self, observatory_id: str) -> List[str]:
+        cursor = self.collection.find({"observatory_id": observatory_id}, {"service_id": 1, "_id": 0})
+        docs = await cursor.to_list(length=None)
+        return [d["service_id"] for d in docs if d.get("service_id")]
+
+# 4. Observatory -> DataSource
+class ObservatoryToDataSourceLinkRepository(BaseRepository[M.ObservatoryToDataSourceLink]):
+    def __init__(self, collection: Collection):
+        super().__init__(collection, M.ObservatoryToDataSourceLink, "observatory_id")
+
+    async def get_source_ids_by_observatory_id(self, observatory_id: str) -> List[str]:
+        cursor = self.collection.find({"observatory_id": observatory_id}, {"source_id": 1, "_id": 0})
+        docs = await cursor.to_list(length=None)
+        return [d["source_id"] for d in docs if d.get("source_id")]
+
+# 5. Catalog -> Catalog Item
 class CatalogToCatalogItemLinkRepository(BaseRepository[M.CatalogToCatalogItemLink]):
     def __init__(self, collection: Collection):
         super().__init__(collection, M.CatalogToCatalogItemLink, "catalog_id")
@@ -234,6 +274,33 @@ class ProductToCatalogItemLinkRepository(BaseRepository[M.CatalogItemToProductLi
 
 
 
+
+
+# 5. Product -> Product (Related Products)
+class ProductToProductLinkRepository(BaseRepository[M.ProductToProductLink]):
+    def __init__(self, collection: Collection):
+        super().__init__(collection, M.ProductToProductLink, "source_product_id")
+
+    async def get_related_ids(self, product_id: str) -> List[str]:
+        """Returns all product IDs related to product_id, regardless of link direction."""
+        cursor = self.collection.find(
+            {"$or": [{"source_product_id": product_id}, {"target_product_id": product_id}]}
+        )
+        docs = await cursor.to_list(length=None)
+        related = []
+        for doc in docs:
+            if doc.get("source_product_id") == product_id:
+                related.append(doc["target_product_id"])
+            else:
+                related.append(doc["source_product_id"])
+        return related
+
+    async def delete_all_for_product(self, product_id: str) -> int:
+        """Removes all links involving product_id. Returns the count deleted."""
+        r = await self.collection.delete_many(
+            {"$or": [{"source_product_id": product_id}, {"target_product_id": product_id}]}
+        )
+        return r.deleted_count
 
 
 # Catalog Item Value -> Catalog Item (The Alias Engine)
@@ -449,13 +516,13 @@ class TaskRepository(BaseRepository[M.TaskX]):
         """
         super().__init__(collection, M.TaskX, "task_id")
 
-    async def get_tasks_by_user(self, user_id: str, limit: int = 50) -> Result[List[M.TaskX], EX.JubError]:
+    async def get_tasks_by_user(self, user_id: str, skip: int = 0, limit: int = 50) -> Result[List[M.TaskX], EX.JubError]:
         """
         Fetches the recent tasks for a user, sorted by newest first.
         This feeds the main list in your UI.
         """
         try:
-            cursor = self.collection.find({"user_id": user_id}).sort("updated_at", -1).limit(limit)
+            cursor = self.collection.find({"user_id": user_id}).sort("updated_at", -1).skip(skip).limit(limit)
             tasks = []
             for doc in await cursor.to_list(length=limit):
                 if '_id' in doc:
@@ -662,3 +729,34 @@ class ServiceRepository(BaseRepository[M.ServiceX]):
             return Ok([M.ServiceX.model_validate(d) for d in docs])
         except Exception as e:
             return Err(EX.UnknownError(str(e)))
+
+
+class ObservatorySearchSuggestionRepository:
+    def __init__(self, collection: Collection):
+        self.collection = collection
+
+    async def record_hit(self, observatory_id: str, query: str) -> None:
+        try:
+            now = DT.datetime.now(DT.timezone.utc)
+            await self.collection.update_one(
+                {"observatory_id": observatory_id, "query": query},
+                {
+                    "$inc": {"hit_count": 1},
+                    "$set": {"last_used": now, "observatory_id": observatory_id, "query": query},
+                },
+                upsert=True,
+            )
+        except Exception as e:
+            L.error(f"Failed to record search suggestion hit: {e}")
+
+    async def get_top(self, observatory_id: str, limit: int = 5) -> List[M.ObservatorySearchSuggestion]:
+        try:
+            cursor = self.collection.find(
+                {"observatory_id": observatory_id},
+                {"_id": 0},
+            ).sort([("hit_count", -1), ("last_used", -1)]).limit(limit)
+            docs = await cursor.to_list(length=limit)
+            return [M.ObservatorySearchSuggestion(**d) for d in docs]
+        except Exception as e:
+            L.error(f"Failed to fetch search suggestions: {e}")
+            return []

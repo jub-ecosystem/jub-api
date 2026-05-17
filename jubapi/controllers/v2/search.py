@@ -1,10 +1,12 @@
+import os
+import time
+from typing import Optional
 from fastapi import Depends, Query
 from fastapi.routing import APIRouter
 import jubapi.middlewares as M
 import jubapi.services.v2 as S
 import jubapi.dto.v2 as DTO
-
-import os
+import jubapi.middlewares as MX
 from jubapi.log.log import Log
 
 log = Log(
@@ -24,19 +26,19 @@ router = APIRouter(prefix="/search", tags=["search"])
         "Example: `jub.v1.VS(MX).VT(>= 2020).VI(SEX_FEMALE AND C_MAMA)`"
     ),
 )
-async def search(query:DTO.SearchQueryDTO, search:S.SearchService = Depends(M.get_search_service)):
-    result = await search.search(query=query.query, observatory_id=query.observatory_id, limit=query.limit, skip=query.skip)
+async def search(
+    query: DTO.SearchQueryDTO,
+    search: S.SearchService = Depends(M.get_search_service), 
+    current_user: DTO.UserProfileDTO = Depends(MX.get_current_user),
 
+):
+    t0 = time.monotonic()
+    result = await search.search(query=query.query, observatory_id=query.observatory_id, limit=query.limit, skip=query.skip, no_cache=query.no_cache)
     if result.is_err:
-        log.error({
-            "error": str(result.unwrap_err()),
-            "query": query
-        })    
-        e = result.unwrap_err()    
-        raise e.to_http_exception()
-    
+        log.error({"action": "controller.search.products", "error": str(result.unwrap_err()), "input": {"query": query.query, "observatory_id": query.observatory_id}})
+        raise result.unwrap_err().to_http_exception()
     response = result.unwrap()
-
+    log.info({"action": "controller.search.products", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"query": query.query}, "result": {"count": len(response)}})
     return response
 
 
@@ -50,27 +52,20 @@ async def search(query:DTO.SearchQueryDTO, search:S.SearchService = Depends(M.ge
     ),
 )
 async def search_records(query: DTO.SearchQueryDTO, search: S.SearchService = Depends(M.get_search_service)):
+    t0 = time.monotonic()
     result = await search.search_data_records(
         query_str      = query.query,
         observatory_id = query.observatory_id,
         limit          = query.limit,
-        skip           = query.skip
+        skip           = query.skip,
+        strict         = query.strict,
     )
-
     if result.is_err:
-        log.error({
-            "error": str(result.unwrap_err()),
-            "query": query.model_dump()
-        })    
+        log.error({"action": "controller.search.records", "error": str(result.unwrap_err()), "input": {"query": query.query, "observatory_id": query.observatory_id}})
         raise result.unwrap_err().to_http_exception()
-    
-    x = result.unwrap()
-    log.info({
-        "message": "Search records successful",
-        "query": query.model_dump(),
-        "result_count": len(x)
-    })
-    return x
+    data = result.unwrap()
+    log.info({"action": "controller.search.records", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"query": query.query}, "result": {"count": len(data)}})
+    return data
 
 
 @router.post(
@@ -85,40 +80,75 @@ async def search_records(query: DTO.SearchQueryDTO, search: S.SearchService = De
     ),
 )
 async def generate_plot(query: DTO.PlotQueryDTO, search: S.SearchService = Depends(M.get_search_service)):
-    log.debug({
-        "message": "Received plot generation request",
-        "query": query.model_dump()    
-    })
+    t0 = time.monotonic()
     result = await search.generate_plot(
-        query_str      = query.query,
-        source_id      = query.source_id,
-        chart_type     = query.chart_type
+        query_str  = query.query,
+        source_id  = query.source_id,
+        chart_type = query.chart_type,
+        strict     = query.strict,
     )
-
     if result.is_err:
-        log.error({
-            "error": str(result.unwrap_err()),
-            "query": query.model_dump()
-        })    
+        log.error({"action": "controller.search.plot", "error": str(result.unwrap_err()), "input": {"query": query.query, "source_id": query.source_id}})
         raise result.unwrap_err().to_http_exception()
-    
+    log.info({"action": "controller.search.plot", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"query": query.query}})
     return result.unwrap()
 
+
 @router.post("/observatories")
-async def search_observatories(query:DTO.SearchQueryDTO, search:S.SearchService = Depends(M.get_search_service)):
-    result = await search.search_observatories(query=query.query)
+async def search_observatories(
+    query: DTO.SearchQueryDTO,
+    search: S.SearchService = Depends(M.get_search_service), 
+    current_user: DTO.UserProfileDTO = Depends(MX.get_current_user),
+
+):
+    t0 = time.monotonic()
+    result = await search.search_observatories(
+        query    = query.query,
+        strict   = query.strict,
+        skip     = query.skip or 0,
+        limit    = query.limit or 100,
+        no_cache = query.no_cache,
+    )
     if result.is_err:
-        log.error({
-            "error": str(result.unwrap_err()),
-            "query": str(query)
-        })
-        e = result.unwrap_err()
-        raise e.to_http_exception()
-
+        log.error({"action": "controller.search.observatories", "error": str(result.unwrap_err()), "input": {"query": query.query}})
+        raise result.unwrap_err().to_http_exception()
     response = result.unwrap()
-    
-
+    log.info({"action": "controller.search.observatories", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"query": query.query}, "result": {"count": len(response)}})
     return response
+
+
+@router.get(
+    "/observatories/suggestions",
+    response_model=DTO.ObservatorySearchSuggestionsResponseDTO,
+    summary="Get top observatory search suggestions",
+    description="Returns the most-used DSL queries that returned results from the observatory search, ranked by hit count.",
+)
+async def get_observatory_search_suggestions(
+    limit: int = Query(5, ge=1, le=20),
+    search: S.SearchService = Depends(M.get_search_service),
+):
+    result = await search.get_observatory_search_suggestions(limit=limit)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    return DTO.ObservatorySearchSuggestionsResponseDTO(suggestions=result.unwrap())
+
+
+@router.get(
+    "/products/suggestions",
+    response_model=DTO.SearchSuggestionsResponseDTO,
+    summary="Get top product search suggestions for an observatory",
+    description="Returns the most-used DSL queries that returned results for the given observatory, ranked by hit count.",
+)
+async def get_search_suggestions(
+    observatory_id: Optional[str] = Query(None, description="Observatory to fetch suggestions for. Omit for global suggestions."),
+    limit: int = Query(5, ge=1, le=20),
+    search: S.SearchService = Depends(M.get_search_service),
+):
+    key = observatory_id if observatory_id else "__global__"
+    result = await search.get_search_suggestions(observatory_id=key, limit=limit)
+    if result.is_err:
+        raise result.unwrap_err().to_http_exception()
+    return DTO.SearchSuggestionsResponseDTO(observatory_id=key, suggestions=result.unwrap())
 
 
 @router.post("/services", summary="Search services by DSL", description=(
@@ -133,7 +163,11 @@ async def search_services(
     query: DTO.ServiceQueryDTO,
     svc:   S.ServiceXService = Depends(M.get_service_x_service),
 ):
+    t0 = time.monotonic()
     result = await svc.query_services_hydrated(query.query, skip=query.skip, limit=query.limit)
     if result.is_err:
+        log.error({"action": "controller.search.services", "error": str(result.unwrap_err()), "input": {"query": query.query}})
         raise result.unwrap_err().to_http_exception()
-    return result.unwrap()
+    data = result.unwrap()
+    log.info({"action": "controller.search.services", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"query": query.query}, "result": {"count": len(data)}})
+    return data

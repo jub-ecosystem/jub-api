@@ -290,7 +290,54 @@ Content-Type: application/json
 
 ---
 
-### Step 6 — Enable the observatory
+### Step 6 — Link services and data sources (optional)
+
+Use these endpoints any time after the observatory is created to associate external services or data sources.
+
+**Link a service:**
+
+```http
+POST /api/v2/observatories/obs_cancer_2024/services
+Content-Type: application/json
+Authorization: Bearer <token>
+
+{ "service_id": "svc_001" }
+```
+
+**List linked services:**
+
+```http
+GET /api/v2/observatories/obs_cancer_2024/services
+```
+
+**Response `200`**
+```json
+[
+  { "service_id": "svc_001", "name": "Cancer Registry API", "description": "...", "provider": "OTHER", "public": true }
+]
+```
+
+**Link a data source:**
+
+```http
+POST /api/v2/observatories/obs_cancer_2024/datasources
+Content-Type: application/json
+Authorization: Bearer <token>
+
+{ "source_id": "src_001" }
+```
+
+**List linked data sources:**
+
+```http
+GET /api/v2/observatories/obs_cancer_2024/datasources
+```
+
+To remove a link use `DELETE /api/v2/observatories/{id}/services/{service_id}` or `DELETE /api/v2/observatories/{id}/datasources/{source_id}`.
+
+---
+
+### Step 7 — Enable the observatory
 
 Once all catalogs, products, files, and records are in place, signal completion:
 

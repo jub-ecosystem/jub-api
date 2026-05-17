@@ -16,8 +16,11 @@ from jubapi.querylang.v2.parser  import QueryAST,Condition,ConditionOperators,Co
 from jubapi.querylang.v2.translator import ASTToMongoTranslator
 from jubapi.querylang.v2.service_parser import ServiceQuery
 from jubapi.log.log import Log
+from jubapi.storage import StorageBackend
+from cachetools import TTLCache
 import jubapi.errors as EX
 from jubapi.db.constants import CollectionNames
+from jubapi.config import JUB_SEARCH_PRODUCT_CACHE_TTL, JUB_SEARCH_OBSERVATORY_CACHE_TTL
 import commonx.dto.xolo as XoloDTO
 from xolo.client.client import XoloClient
 
@@ -93,13 +96,16 @@ class GraphLinkManager:
     Relies strictly on injected Link Repositories.
     """
     def __init__(
-        self, 
+        self,
         observatory_product_link_repository: R.ObservatoryToProductLinkRepository,
         observatory_catalog_link_repository: R.ObservatoryToCatalogLinkRepository,
         catalog_catalog_item_link_repository: R.CatalogToCatalogItemLinkRepository,
         product_catalog_item_link_repository: R.ProductToCatalogItemLinkRepository,
         catalog_item_relationship_repository: R.CatalogItemRelationshipRepository,
-        catalog_item_catalog_alias_link_repository: R.CatalogItemToCatalogAliasLinkRepository
+        catalog_item_catalog_alias_link_repository: R.CatalogItemToCatalogAliasLinkRepository,
+        observatory_service_link_repository: R.ObservatoryToServiceLinkRepository,
+        observatory_datasource_link_repository: R.ObservatoryToDataSourceLinkRepository,
+        product_product_link_repository: R.ProductToProductLinkRepository,
     ):
         self.observatory_product_link_repository        = observatory_product_link_repository
         self.observatory_catalog_link_repository        = observatory_catalog_link_repository
@@ -107,6 +113,9 @@ class GraphLinkManager:
         self.product_catalog_item_link_repository       = product_catalog_item_link_repository
         self.catalog_item_relationship_repository       = catalog_item_relationship_repository
         self.catalog_item_catalog_alias_link_repository = catalog_item_catalog_alias_link_repository
+        self.observatory_service_link_repository        = observatory_service_link_repository
+        self.observatory_datasource_link_repository     = observatory_datasource_link_repository
+        self.product_product_link_repository            = product_product_link_repository
 
 
     async def get_alias_links_by_item_ids(self, item_ids: List[str]) -> Result[List[M.CatalogItemToCatalogAliasLink], EX.JubError]:
@@ -431,17 +440,128 @@ class GraphLinkManager:
             L.error(f"Error getting product IDs for catalog item {catalog_item_id}: {e}")
             return Err(EX.JubError.from_exception(e))
 
+    async def link_observatory_to_service(self, observatory_id: str, service_id: str) -> Result[UpdateResult, EX.JubError]:
+        try:
+            link = M.ObservatoryToServiceLink(observatory_id=observatory_id, service_id=service_id)
+            r = await self.observatory_service_link_repository.collection.update_one(
+                {"observatory_id": observatory_id, "service_id": service_id},
+                {"$set": link.model_dump()},
+                upsert=True
+            )
+            return Ok(r)
+        except Exception as e:
+            L.error(f"Error linking observatory to service: {e}")
+            return Err(EX.JubError.from_exception(e))
+
+    async def unlink_observatory_from_service(self, observatory_id: str, service_id: str) -> Result[bool, EX.JubError]:
+        try:
+            r = await self.observatory_service_link_repository.collection.delete_one(
+                {"observatory_id": observatory_id, "service_id": service_id}
+            )
+            return Ok(r.deleted_count > 0)
+        except Exception as e:
+            L.error(f"Error unlinking service {service_id} from observatory {observatory_id}: {e}")
+            return Err(EX.JubError.from_exception(e))
+
+    async def get_services_linked_to_observatory(self, observatory_id: str) -> Result[List[str], EX.JubError]:
+        try:
+            ids = await self.observatory_service_link_repository.get_service_ids_by_observatory_id(observatory_id)
+            return Ok(ids)
+        except Exception as e:
+            L.error(f"Error getting services linked to observatory: {e}")
+            return Err(EX.JubError.from_exception(e))
+
+    async def link_observatory_to_datasource(self, observatory_id: str, source_id: str) -> Result[UpdateResult, EX.JubError]:
+        try:
+            link = M.ObservatoryToDataSourceLink(observatory_id=observatory_id, source_id=source_id)
+            r = await self.observatory_datasource_link_repository.collection.update_one(
+                {"observatory_id": observatory_id, "source_id": source_id},
+                {"$set": link.model_dump()},
+                upsert=True
+            )
+            return Ok(r)
+        except Exception as e:
+            L.error(f"Error linking observatory to datasource: {e}")
+            return Err(EX.JubError.from_exception(e))
+
+    async def unlink_observatory_from_datasource(self, observatory_id: str, source_id: str) -> Result[bool, EX.JubError]:
+        try:
+            r = await self.observatory_datasource_link_repository.collection.delete_one(
+                {"observatory_id": observatory_id, "source_id": source_id}
+            )
+            return Ok(r.deleted_count > 0)
+        except Exception as e:
+            L.error(f"Error unlinking datasource {source_id} from observatory {observatory_id}: {e}")
+            return Err(EX.JubError.from_exception(e))
+
+    async def get_datasources_linked_to_observatory(self, observatory_id: str) -> Result[List[str], EX.JubError]:
+        try:
+            ids = await self.observatory_datasource_link_repository.get_source_ids_by_observatory_id(observatory_id)
+            return Ok(ids)
+        except Exception as e:
+            L.error(f"Error getting datasources linked to observatory: {e}")
+            return Err(EX.JubError.from_exception(e))
+
     async def remove_all_observatory_links(self, observatory_id: str) -> Result[bool, EX.JubError]:
-        """Removes all catalog and product links for an observatory (used on delete)."""
+        """Removes all catalog, product, service, and datasource links for an observatory (used on delete)."""
         try:
             await self.observatory_catalog_link_repository.collection.delete_many({"observatory_id": observatory_id})
             await self.observatory_product_link_repository.collection.delete_many({"observatory_id": observatory_id})
+            await self.observatory_service_link_repository.collection.delete_many({"observatory_id": observatory_id})
+            await self.observatory_datasource_link_repository.collection.delete_many({"observatory_id": observatory_id})
             return Ok(True)
         except Exception as e:
             L.error(f"Error removing all observatory links for {observatory_id}: {e}")
             return Err(EX.JubError.from_exception(e))
 
     #  Remove links (called by services when an entity is deleted, to maintain graph integrity)
+    # ── Product ↔ Product (Related Products) ──────────────────────────────
+
+    async def link_products(self, id_a: str, id_b: str) -> Result[UpdateResult, EX.JubError]:
+        """Creates a symmetric relationship between two products. IDs are normalized so the link is unique regardless of argument order."""
+        try:
+            source, target = sorted([id_a, id_b])
+            link = M.ProductToProductLink(source_product_id=source, target_product_id=target)
+            r = await self.product_product_link_repository.collection.update_one(
+                {"source_product_id": source, "target_product_id": target},
+                {"$set": link.model_dump()},
+                upsert=True,
+            )
+            return Ok(r)
+        except Exception as e:
+            L.error(f"Error linking products {id_a} <-> {id_b}: {e}")
+            return Err(EX.JubError.from_exception(e))
+
+    async def unlink_products(self, id_a: str, id_b: str) -> Result[bool, EX.JubError]:
+        """Removes the relationship between two products."""
+        try:
+            source, target = sorted([id_a, id_b])
+            r = await self.product_product_link_repository.collection.delete_one(
+                {"source_product_id": source, "target_product_id": target}
+            )
+            return Ok(r.deleted_count > 0)
+        except Exception as e:
+            L.error(f"Error unlinking products {id_a} <-> {id_b}: {e}")
+            return Err(EX.JubError.from_exception(e))
+
+    async def get_related_product_ids(self, product_id: str) -> Result[List[str], EX.JubError]:
+        """Returns all product IDs related to the given product."""
+        try:
+            ids = await self.product_product_link_repository.get_related_ids(product_id)
+            return Ok(ids)
+        except Exception as e:
+            L.error(f"Error getting related product IDs for {product_id}: {e}")
+            return Err(EX.JubError.from_exception(e))
+
+    async def unlink_all_product_relationships(self, product_id: str) -> Result[int, EX.JubError]:
+        """Removes all product-to-product links involving the given product. Called on product deletion."""
+        try:
+            count = await self.product_product_link_repository.delete_all_for_product(product_id)
+            return Ok(count)
+        except Exception as e:
+            L.error(f"Error removing all product relationships for {product_id}: {e}")
+            return Err(EX.JubError.from_exception(e))
+
     async def remove_all_product_links(self, product_id: str)->Result[Tuple[DeleteResult, DeleteResult],EX.JubError]:
         """Called by ProductService when a product is completely deleted."""
         try:
@@ -492,12 +612,16 @@ class ObservatoriesService:
         product_repository: R.ProductsRepository,
         graph_link_manager: GraphLinkManager,
         review_repository: R.ReviewRepository,
+        service_repository: R.ServiceRepository,
+        datasource_repository: R.DataSourceRepository,
     ):
         self.observatory_repository = observatory_repository
         self.observatory_product_link_repository = observatory_product_link_repository
         self.product_repository = product_repository
         self.graph_link_manager = graph_link_manager
         self.review_repository = review_repository
+        self.service_repository = service_repository
+        self.datasource_repository = datasource_repository
 
     # --- Create ---
 
@@ -523,6 +647,85 @@ class ObservatoriesService:
         if model.is_err:
             return Err(EX.NotFound(f"Observatory '{observatory_id}' not found."))
         return Ok(DTO.ObservatoryXDTO.from_model(model.unwrap()))
+
+    async def get_observatory_detail(self, observatory_id: str, services_limit: int = 10) -> Result[DTO.ObservatoryDetailDTO, EX.JubError]:
+        import time as _time
+        t0 = _time.monotonic()
+        base_result = await self.get_observatory(observatory_id)
+        if base_result.is_err:
+            L.error({"action": "service.observatory.get_detail", "error": str(base_result.unwrap_err()), "input": {"observatory_id": observatory_id}})
+            return base_result  # type: ignore[return-value]
+        base = base_result.unwrap()
+
+        services_result, datasources_result, rating_stats = await asyncio.gather(
+            self.list_services(observatory_id),
+            self.list_datasources(observatory_id),
+            self.review_repository.get_rating_stats(observatory_id),
+        )
+
+        services = []
+        if services_result.is_ok:
+            for s in services_result.unwrap()[:services_limit]:
+                services.append(DTO.ServiceSnapshotDTO(service_id=s.service_id, name=s.name, provider=s.provider))
+
+        data_sources = []
+        if datasources_result.is_ok:
+            for ds in datasources_result.unwrap():
+                data_sources.append(DTO.DataSourceSnapshotDTO(source_id=ds.source_id, name=ds.name))
+
+        avg_rating, review_count = rating_stats
+        detail = DTO.ObservatoryDetailDTO(
+            observatory_id = base.observatory_id,
+            title          = base.title,
+            description    = base.description,
+            image_url      = base.image_url,
+            metadata       = base.metadata,
+            view_count     = base.view_count,
+            created_at     = base.created_at,
+            updated_at     = base.updated_at,
+            services       = services,
+            data_sources   = data_sources,
+            avg_rating     = avg_rating,
+            review_count   = review_count,
+        )
+        L.info({"action": "service.observatory.get_detail", "duration_ms": int((_time.monotonic()-t0)*1000), "input": {"observatory_id": observatory_id}})
+        return Ok(detail)
+
+    async def get_observatory_stats_batch(self, ids: List[str], services_limit: int = 10) -> List[DTO.ObservatoryStatsDTO]:
+        import time as _time
+        t0 = _time.monotonic()
+
+        async def _stats_for(observatory_id: str) -> Optional[DTO.ObservatoryStatsDTO]:
+            try:
+                services_result, datasources_result, rating_stats = await asyncio.gather(
+                    self.list_services(observatory_id),
+                    self.list_datasources(observatory_id),
+                    self.review_repository.get_rating_stats(observatory_id),
+                )
+                services = []
+                if services_result.is_ok:
+                    for s in services_result.unwrap()[:services_limit]:
+                        services.append(DTO.ServiceSnapshotDTO(service_id=s.service_id, name=s.name, provider=s.provider))
+                data_sources = []
+                if datasources_result.is_ok:
+                    for ds in datasources_result.unwrap():
+                        data_sources.append(DTO.DataSourceSnapshotDTO(source_id=ds.source_id, name=ds.name))
+                avg_rating, review_count = rating_stats
+                return DTO.ObservatoryStatsDTO(
+                    observatory_id = observatory_id,
+                    avg_rating     = avg_rating,
+                    review_count   = review_count,
+                    services       = services,
+                    data_sources   = data_sources,
+                )
+            except Exception as e:
+                L.error({"action": "service.observatory.stats_batch", "error": str(e), "input": {"observatory_id": observatory_id}})
+                return None
+
+        results = await asyncio.gather(*[_stats_for(oid) for oid in ids])
+        data = [r for r in results if r is not None]
+        L.info({"action": "service.observatory.stats_batch", "duration_ms": int((_time.monotonic()-t0)*1000), "input": {"ids_count": len(ids)}, "result": {"count": len(data)}})
+        return data
 
     async def get_all_products_in_observatory(self, observatory_id: str) -> Result[List[DTO.ProductSimpleDTO], EX.JubError]:
         try:
@@ -597,6 +800,74 @@ class ObservatoriesService:
 
     async def unlink_product(self, observatory_id: str, product_id: str) -> Result[bool, EX.JubError]:
         return await self.graph_link_manager.unlink_observatory_from_product(observatory_id, product_id)
+
+    # --- Service link management ---
+
+    async def link_service(self, observatory_id: str, service_id: str) -> Result[bool, EX.JubError]:
+        svc = await self.service_repository.get_by_id(service_id)
+        if svc.is_err:
+            return Err(EX.NotFound(f"Service '{service_id}' not found."))
+        result = await self.graph_link_manager.link_observatory_to_service(observatory_id, service_id)
+        if result.is_err:
+            return Err(EX.JubError(f"Failed to link service '{service_id}' to observatory '{observatory_id}'."))
+        return Ok(True)
+
+    async def unlink_service(self, observatory_id: str, service_id: str) -> Result[bool, EX.JubError]:
+        return await self.graph_link_manager.unlink_observatory_from_service(observatory_id, service_id)
+
+    async def list_services(self, observatory_id: str) -> Result[List[DTO.ServiceSimpleDTO], EX.JubError]:
+        try:
+            pipeline = [
+                {"$match": {"observatory_id": observatory_id}},
+                {"$lookup": {
+                    "from": CollectionNames.SERVICES.value,
+                    "localField": "service_id",
+                    "foreignField": "service_id",
+                    "as": "service_data",
+                }},
+                {"$unwind": "$service_data"},
+                {"$replaceRoot": {"newRoot": "$service_data"}},
+            ]
+            cursor = self.graph_link_manager.observatory_service_link_repository.collection.aggregate(pipeline)
+            docs = await cursor.to_list(length=None)
+            return Ok([DTO.ServiceSimpleDTO.from_model(M.ServiceX.model_validate(d)) for d in docs])
+        except Exception as e:
+            L.error(f"Error fetching services in observatory {observatory_id}: {e}")
+            return Err(EX.UnknownError(str(e)))
+
+    # --- DataSource link management ---
+
+    async def link_datasource(self, observatory_id: str, source_id: str) -> Result[bool, EX.JubError]:
+        src = await self.datasource_repository.get_by_id(source_id)
+        if src.is_err:
+            return Err(EX.NotFound(f"DataSource '{source_id}' not found."))
+        result = await self.graph_link_manager.link_observatory_to_datasource(observatory_id, source_id)
+        if result.is_err:
+            return Err(EX.JubError(f"Failed to link datasource '{source_id}' to observatory '{observatory_id}'."))
+        return Ok(True)
+
+    async def unlink_datasource(self, observatory_id: str, source_id: str) -> Result[bool, EX.JubError]:
+        return await self.graph_link_manager.unlink_observatory_from_datasource(observatory_id, source_id)
+
+    async def list_datasources(self, observatory_id: str) -> Result[List[DTO.DataSourceDTO], EX.JubError]:
+        try:
+            pipeline = [
+                {"$match": {"observatory_id": observatory_id}},
+                {"$lookup": {
+                    "from": CollectionNames.DATA_SOURCES.value,
+                    "localField": "source_id",
+                    "foreignField": "source_id",
+                    "as": "source_data",
+                }},
+                {"$unwind": "$source_data"},
+                {"$replaceRoot": {"newRoot": "$source_data"}},
+            ]
+            cursor = self.graph_link_manager.observatory_datasource_link_repository.collection.aggregate(pipeline)
+            docs = await cursor.to_list(length=None)
+            return Ok([DTO.DataSourceDTO.from_model(M.DataSource.model_validate(d)) for d in docs])
+        except Exception as e:
+            L.error(f"Error fetching datasources in observatory {observatory_id}: {e}")
+            return Err(EX.UnknownError(str(e)))
 
     # --- Views ---
 
@@ -686,7 +957,12 @@ class CatalogService:
     async def create_catalog_bulk(self, dto: DTO.CatalogCreateDTO) -> Result[str, EX.JubError]:
         try:
             # 1. Create the Root Catalog
-            catalog_id = f"cat_{uuid.uuid4().hex[:8]}"
+            catalog_id = f"cat_{uuid.uuid4().hex[:8]}" if dto.catalog_id is None else dto.catalog_id
+
+            exists = await self.catalog_repository.get_by_id(catalog_id)
+            if exists.is_ok:
+                return Err(EX.AlreadyExists(f"Catalog with ID '{catalog_id}' already exists. Please choose a different ID or omit it to auto-generate."))
+
             catalog_model = M.CatalogX(
                 catalog_id=catalog_id,
                 name=dto.name,
@@ -713,7 +989,13 @@ class CatalogService:
 
     async def _process_item_recursive(self, item_dto: DTO.CatalogItemCreateDTO, catalog_id: str, parent_item_id: Optional[str], catalog_type: ENUMS.CatalogType):
         # A. Create the Item
-        item_id = f"itm_{uuid.uuid4().hex[:8]}"
+        item_id = item_dto.catalog_item_id or f"itm_{uuid.uuid4().hex[:8]}"
+        exists = await self.catalog_item_repository.get_by_id(item_id)
+        if exists.is_ok:
+            L.warning(f"Catalog item with ID '{item_id}' already exists. Skipping creation and using existing item.")
+            item_id = f"itm_{uuid.uuid4().hex[:8]}"
+
+            # return Err(EX.AlreadyExists(f"Catalog item with ID '{item_id}' already exists. Please choose a different ID or omit it to auto-generate."))
         item_model = M.CatalogItemX(
             catalog_item_id = item_id,
             name            = item_dto.name,
@@ -737,13 +1019,18 @@ class CatalogService:
 
         # D. Process Aliases
         for alias_dto in item_dto.aliases:
-            alias_id = f"alias_{uuid.uuid4().hex[:8]}"
+            alias_id = alias_dto.alias_id or f"alias_{uuid.uuid4().hex[:8]}"
+            exists_alias = await self.catalog_item_alias_repository.get_by_id(alias_id)
+            if exists_alias.is_ok:
+                L.warning(f"Catalog item alias with ID '{alias_id}' already exists. Skipping creation and using existing alias.")
+                alias_id = f"alias_{uuid.uuid4().hex[:8]}"
+
             alias_model = M.CatalogItemAlias(
-                catalog_item_alias_id=alias_id,
-                value=alias_dto.value,
-                value_type=alias_dto.value_type,
-                catalog_type=catalog_type,
-                description=alias_dto.description
+                catalog_item_alias_id = alias_id,
+                value                 = alias_dto.value,
+                value_type            = alias_dto.value_type,
+                catalog_type          = catalog_type,
+                description           = alias_dto.description
             )
             await self.catalog_item_alias_repository.insert(alias_model)
             
@@ -775,6 +1062,22 @@ class CatalogService:
                 ) for c in catalogs
             ]
             return Ok(dtos)
+        except Exception as e:
+            return Err(EX.UnknownError(detail=str(e), status_code=500))
+
+    async def get_catalog_items(self, catalog_id: str) -> Result[List[DTO.CatalogItemXResponseDTO], EX.JubError]:
+        """Returns a flat list of all items linked to a catalog."""
+        try:
+            ids_result = await self.link_manager.get_catalog_items_linked_to_catalog(catalog_id)
+            if ids_result.is_err:
+                return Err(ids_result.unwrap_err())
+            item_ids = ids_result.unwrap()
+            if not item_ids:
+                return Ok([])
+            items_result = await self.catalog_item_repository.find_by_ids(item_ids)
+            if items_result.is_err:
+                return Err(items_result.unwrap_err())
+            return Ok([DTO.CatalogItemXResponseDTO.from_model(i) for i in items_result.unwrap()])
         except Exception as e:
             return Err(EX.UnknownError(detail=str(e), status_code=500))
 
@@ -992,21 +1295,28 @@ class CatalogService:
         """Deletes an item and securely wipes its tags, aliases, and hierarchy edges."""
         try:
             success = await self.catalog_item_repository.delete(catalog_item_id)
-            if success:
+            if success.is_ok:
                 await self.link_manager.remove_all_catalog_item_links(catalog_item_id)
-            return Ok(success)
+            return success
         except Exception as e:
             return Err(EX.JubError.from_exception(e))
 
-    async def delete_catalog(self, catalog_id: str) -> Result[bool, EX.JubError]:
-        """Deletes a catalog and its direct links."""
-        try:
-            result = await self.catalog_repository.delete(catalog_id)
-            if result.is_ok:
-                await self.link_manager.remove_all_catalog_links(catalog_id)
-                return Ok(result.unwrap())
+    async def update_catalog(self, catalog_id: str, data: dict) -> Result[M.CatalogX, EX.JubError]:
+        exists = await self.catalog_repository.get_by_id(catalog_id)
+        if exists.is_err:
+            return Err(EX.NotFound(f"Catalog '{catalog_id}' not found."))
+        return await self.catalog_repository.update(catalog_id, data)
 
-            return result
+    async def delete_catalog(self, catalog_id: str) -> Result[bool, EX.JubError]:
+        """Deletes a catalog, all its linked CatalogItems (with full cascade), and link rows."""
+        try:
+            item_ids_result = await self.link_manager.get_catalog_items_linked_to_catalog(catalog_id)
+            if item_ids_result.is_ok:
+                for item_id in item_ids_result.unwrap():
+                    await self.link_manager.remove_all_catalog_item_links(item_id)
+                    await self.catalog_item_repository.delete(item_id)
+            await self.link_manager.remove_all_catalog_links(catalog_id)
+            return await self.catalog_repository.delete(catalog_id)
         except Exception as e:
             return Err(EX.JubError.from_exception(e))
 
@@ -1085,12 +1395,14 @@ class CatalogService:
 
 class ProductService:
     def __init__(
-        self, 
-        product_repository: R.ProductsRepository, 
-        link_manager: GraphLinkManager
+        self,
+        product_repository: R.ProductsRepository,
+        link_manager: GraphLinkManager,
+        storage: Optional[StorageBackend] = None,
     ):
         self.product_repository = product_repository
         self.link_manager = link_manager
+        self.storage = storage
 
     
     async def get_product_by_id(self, product_id: str) -> Result[M.ProductX, EX.JubError]:
@@ -1204,6 +1516,62 @@ class ProductService:
         """Removes a single catalog-item tag from a product."""
         return await self.link_manager.unlink_product_from_catalog_item(product_id, catalog_item_id)
 
+    async def tag_product_from_catalog(self, product_id: str, catalog_id: str) -> Result[int, EX.JubError]:
+        """Links a product to every item currently in the given catalog (wildcard assign)."""
+        check = await self.product_repository.get_by_id(product_id)
+        if check.is_err:
+            return Err(EX.NotFound(f"Product '{product_id}' not found."))
+        items_result = await self.link_manager.get_catalog_items_linked_to_catalog(catalog_id)
+        if items_result.is_err:
+            return items_result
+        item_ids = items_result.unwrap()
+        results = await asyncio.gather(
+            *[self.link_manager.link_product_to_catalog_item(product_id, iid) for iid in item_ids]
+        )
+        return Ok(sum(1 for r in results if r.is_ok))
+
+    # ── Related products ──────────────────────────────────────────────────
+
+    async def relate_products(self, product_id: str, related_product_id: str) -> Result[bool, EX.JubError]:
+        """Creates a symmetric relationship between two products."""
+        check_a = await self.product_repository.get_by_id(product_id)
+        if check_a.is_err:
+            return Err(EX.NotFound(f"Product '{product_id}' not found."))
+        check_b = await self.product_repository.get_by_id(related_product_id)
+        if check_b.is_err:
+            return Err(EX.NotFound(f"Product '{related_product_id}' not found."))
+        res = await self.link_manager.link_products(product_id, related_product_id)
+        if res.is_err:
+            return Err(res.unwrap_err())
+        return Ok(True)
+
+    async def unrelate_products(self, product_id: str, related_product_id: str) -> Result[bool, EX.JubError]:
+        """Removes the relationship between two products."""
+        return await self.link_manager.unlink_products(product_id, related_product_id)
+
+    async def get_related_products(self, product_id: str) -> Result[List[DTO.ProductSimpleDTO], EX.JubError]:
+        """Returns all products related to the given product."""
+        ids_res = await self.link_manager.get_related_product_ids(product_id)
+        if ids_res.is_err:
+            return Err(ids_res.unwrap_err())
+        ids = ids_res.unwrap()
+        if not ids:
+            return Ok([])
+        models_res = await self.product_repository.find_by_ids(ids)
+        if models_res.is_err:
+            return Err(models_res.unwrap_err())
+        return Ok([DTO.ProductSimpleDTO.from_model(m) for m in models_res.unwrap()])
+
+    # ── Metadata filter ───────────────────────────────────────────────────
+
+    async def filter_products_by_metadata(self, filters: Dict[str, str], limit: int = 100) -> Result[List[DTO.ProductSimpleDTO], EX.JubError]:
+        """Filters products by metadata key-value pairs. All supplied pairs must match (AND)."""
+        query = {f"metadata.{k}": v for k, v in filters.items()}
+        res = await self.product_repository.find(query, limit=limit)
+        if res.is_err:
+            return Err(res.unwrap_err())
+        return Ok([DTO.ProductSimpleDTO.from_model(m) for m in res.unwrap()])
+
     async def delete_product(self, product_id: str) -> Result[bool, EX.JubError]:
         """Deletes the product and securely wipes its observatory assignment and tags."""
         check = await self.product_repository.get_by_id(product_id)
@@ -1217,6 +1585,19 @@ class ProductService:
         wipe_res = await self.link_manager.remove_all_product_links(product_id)
         if wipe_res.is_err:
             return wipe_res
+
+        await self.link_manager.unlink_all_product_relationships(product_id)
+
+        if self.storage is not None:
+            try:
+                prefix = self.storage.prefix_for(product_id)
+                deleted_count = await self.storage.delete_prefix(prefix)
+                if deleted_count > 0:
+                    L.info({"action": "service.product.delete_files", "result": {"product_id": product_id, "files_deleted": deleted_count, "prefix": prefix}})
+                else:
+                    L.info({"action": "service.product.delete_files", "result": {"product_id": product_id, "files_deleted": 0, "prefix": prefix, "note": "no files found"}})
+            except Exception as e:
+                L.error({"action": "service.product.delete_files", "error": str(e), "input": {"product_id": product_id}})
 
         return Ok(True)
 
@@ -1249,8 +1630,10 @@ class SearchService:
         self.observatory_repository              = observatory_repository
         self.catalog_repository                  = catalog_repository
         self.data_records_repository             = data_records_repository
-        
- 
+        self.suggestion_repository: Optional[R.ObservatorySearchSuggestionRepository] = None
+        self._product_cache     = TTLCache(maxsize=512, ttl=JUB_SEARCH_PRODUCT_CACHE_TTL)
+        self._observatory_cache = TTLCache(maxsize=256, ttl=JUB_SEARCH_OBSERVATORY_CACHE_TTL)
+
     async def __resolve_item_ids_for_value(self, leaf_value: str) -> set:
         """
         Returns catalog_item_ids that match leaf_value directly or through an alias.
@@ -1303,12 +1686,16 @@ class SearchService:
                 result = result & s
             return result
 
-    async def search_observatories(self, query: str) -> Result[List[DTO.ObservatoryXDTO], EX.JubError]:
+    async def search_observatories(self, query: str, strict: bool = True, skip: int = 0, limit: int = 100, no_cache: bool = False) -> Result[List[DTO.ObservatoryXDTO], EX.JubError]:
         """
         Finds observatories by walking: DSL condition → catalog items (+ aliases)
         → products → observatories. Only observatories with at least one matching
         product are returned.
         """
+        cache_key = (query, strict, skip, limit)
+        if not no_cache and cache_key in self._observatory_cache:
+            return Ok(self._observatory_cache[cache_key])
+
         try:
             ast = QueryAST.parse(query)
             L.debug(f"Parsed AST: {ast}")
@@ -1369,11 +1756,19 @@ class SearchService:
                 per_block_product_sets.append(block_result)
 
             if not per_block_product_sets:
+                if not no_cache:
+                    self._observatory_cache[cache_key] = []
                 return Ok([])
 
-            # Short-circuit: any block with an empty (not None) set means no results
-            if any(s is not None and len(s) == 0 for s in per_block_product_sets):
-                return Ok([])
+            if strict:
+                # Short-circuit: any block with an empty (not None) set means no results
+                if any(s is not None and len(s) == 0 for s in per_block_product_sets):
+                    if not no_cache:
+                        self._observatory_cache[cache_key] = []
+                    return Ok([])
+            else:
+                # Lenient: drop blocks that resolved to nothing, keep wildcards and non-empty sets
+                per_block_product_sets = [s for s in per_block_product_sets if s is None or len(s) > 0]
 
             specific_sets = [s for s in per_block_product_sets if s is not None]
 
@@ -1381,24 +1776,33 @@ class SearchService:
                 # All blocks were wildcards → any observatory with at least one product
                 obs_ids = await self.observatory_product_link_repository.get_all_observatory_ids_with_products()
             else:
-                # AND across blocks
-                valid_product_ids: set = specific_sets[0]
-                for s in specific_sets[1:]:
-                    valid_product_ids = valid_product_ids & s
-                    if not valid_product_ids:
+                # Convert each per-block product set to an observatory set, then intersect at
+                # the observatory level. This allows an observatory to satisfy VS(MX) via one
+                # product and VT(2015) via a different product — both correct.
+                per_block_obs_sets: List[Set[str]] = []
+                for product_set in specific_sets:
+                    block_obs: Set[str] = set()
+                    for product_id in product_set:
+                        ids = await self.observatory_product_link_repository.get_observatory_ids_by_product_id(product_id)
+                        block_obs.update(ids)
+                    per_block_obs_sets.append(block_obs)
+
+                obs_ids: Set[str] = per_block_obs_sets[0]
+                for s in per_block_obs_sets[1:]:
+                    obs_ids = obs_ids & s
+                    if not obs_ids:
+                        if not no_cache:
+                            self._observatory_cache[cache_key] = []
                         return Ok([])
 
-                obs_ids: Set[str] = set()
-                for product_id in valid_product_ids:
-                    ids = await self.observatory_product_link_repository.get_observatory_ids_by_product_id(product_id)
-                    obs_ids.update(ids)
-
             if not obs_ids:
+                if not no_cache:
+                    self._observatory_cache[cache_key] = []
                 return Ok([])
 
             observatory_tasks = [self.observatory_repository.get_by_id(obs_id) for obs_id in obs_ids]
             # observatory_tasks = [self.observatory_repository.find({"observatory_id": obs_id,"is_disabled":False}) for obs_id in obs_ids]
-            print(observatory_tasks)
+            # print(observatory_tasks)
             raw_observatories = await asyncio.gather(*observatory_tasks)
             # dtos = [DTO.ObservatoryXDTO.from_model(obs.unwrap()) for obs in raw_observatories if obs.is_ok]
             dtos = []
@@ -1409,13 +1813,20 @@ class SearchService:
                         dtos.append(DTO.ObservatoryXDTO.from_model(model))
                 else:
                     L.warning(f"Failed to fetch observatory details for one of the results: {obs.unwrap_err()}")
-            return Ok(dtos)
+            result = dtos[skip: skip + limit]
+            if not no_cache:
+                self._observatory_cache[cache_key] = result
+            if result and self.suggestion_repository:
+                asyncio.create_task(
+                    self.suggestion_repository.record_hit("__observatories__", query)
+                )
+            return Ok(result)
         except Exception as e:
             L.error({"message": "Error during observatory search", "error": str(e), "query": query})
             return Err(EX.JubError.from_exception(e))
 
 
-    async def generate_plot(self, query_str: str, source_id: Optional[str] = None, chart_type: str = "bar", **_):
+    async def generate_plot(self, query_str: str, source_id: Optional[str] = None, chart_type: str = "bar", strict: bool = True, **_):
         try:
             ast = QueryAST.parse(query_str)
 
@@ -1428,11 +1839,17 @@ class SearchService:
                 prefix = q.catalog_prefix
                 group  = q.group
                 if prefix == SPATIAL_VARIABLE:
-                    match_filter.update(await self._build_spatial_filter(group))
+                    f = await self._build_spatial_filter(group)
+                    if f or strict:
+                        match_filter.update(f)
                 elif prefix == TEMPORAL_VARIABLE:
-                    match_filter.update(ASTToMongoTranslator._build_temporal(group))
+                    f = ASTToMongoTranslator._build_temporal(group)
+                    if f or strict:
+                        match_filter.update(f)
                 elif prefix == INTEREST_VARIABLE:
-                    match_filter.update(await self._build_interest_filter(group))
+                    f = await self._build_interest_filter(group)
+                    if f or strict:
+                        match_filter.update(f)
 
             # 2. $group — BY() resolved via catalog membership, VO() stays pure
             group_id, by_item_ids = await self._build_group_id(ast)
@@ -1598,92 +2015,77 @@ class SearchService:
     
     
     
-    async def search(self,query:str,observatory_id: Optional[str] = None,skip:int=0,limit:int=10)->Result[List[DTO.ProductXDTO], EX.JubError]:
+    async def search(self, query: str, observatory_id: Optional[str] = None, skip: int = 0, limit: int = 10, no_cache: bool = False) -> Result[List[DTO.ProductXDTO], EX.JubError]:
         """
-        Takes raw ProductX models, resolves their graph relationships to get 
+        Takes raw ProductX models, resolves their graph relationships to get
         catalog item names, and returns fully hydrated ProductXDTOs.
         """
-        products_result = await self.execute_query(query=query, observatory_id=observatory_id,skip=skip,limit=limit)
+        cache_key = (query, observatory_id, skip, limit)
+        if not no_cache and cache_key in self._product_cache:
+            return Ok(self._product_cache[cache_key])
+
+        products_result = await self.execute_query(query=query, observatory_id=observatory_id, skip=skip, limit=limit)
         
         if products_result.is_err:
             return Err(products_result.unwrap_err())
         
 
-        products = products_result.unwrap()  
+        products = products_result.unwrap()
         if not products:
+            if not no_cache:
+                self._product_cache[cache_key] = []
             return Ok([])
 
         # 1. Extract all product IDs
         product_ids = [p.product_id for p in products]
 
-        # 2. Fetch all links for these products concurrently.
-        # (Note: Adjust 'get_by_product_id' to match your repository's actual method name)
-        link_tasks = [
-            self.product_catalog_item_link_repository.get_by_product_id(pid)
-            for pid in product_ids
-        ]
-        links_results = await asyncio.gather(*link_tasks)
-
-        links:List[List[M.CatalogItemToProductLink]] = []
-        for l in links_results:
-            if l.is_err:
-                L.error(f"Failed to fetch product catalog item links: {l.unwrap_err()}")
-                continue
-            links.append(l.unwrap())
-
-
-
+        # 2. Batch-fetch all catalog-item links for these products in one query
+        link_docs = await self.product_catalog_item_link_repository.collection.find(
+            {"product_id": {"$in": product_ids}},
+            {"product_id": 1, "catalog_item_id": 1, "_id": 0},
+        ).to_list(length=None)
 
         # 3. Map product_id -> list of catalog_item_ids and gather unique item IDs
-        product_to_item_ids:Dict[str, List[str]] = {}
-        unique_item_ids:Set[str] = set()
+        product_to_item_ids: Dict[str, List[str]] = {}
+        unique_item_ids: Set[str] = set()
+        for doc in link_docs:
+            pid    = doc["product_id"]
+            iid    = doc["catalog_item_id"]
+            product_to_item_ids.setdefault(pid, []).append(iid)
+            unique_item_ids.add(iid)
 
-        for pid, catalog_items_links in zip(product_ids, links):
-            # Assuming your link model has a property called 'catalog_item_id'
-            # If your repo returns None for empty links, we handle it safely:
-            if catalog_items_links:
-                item_ids = [link.catalog_item_id for link in catalog_items_links]
-            else:
-                item_ids = []
-                
-            product_to_item_ids[pid] = item_ids
-            unique_item_ids.update(item_ids)
+        # 4. Batch-fetch all catalog items in one query
+        item_docs = await self.catalog_item_repository.collection.find(
+            {"catalog_item_id": {"$in": list(unique_item_ids)}}
+        ).to_list(length=None)
 
-        # 4. Fetch the actual Catalog Items to get their human-readable names
-        # (Note: Adjust 'get' to match your repository's actual method name)
-        item_tasks = [
-            self.catalog_item_repository.get_by_id(item_id) 
-            for item_id in unique_item_ids
-        ]
-        catalog_items = await asyncio.gather(*item_tasks)
-
-        # 5. Create a fast lookup dictionary: item_id -> item name
-        item_lookup:Dict[str, str] = {}
-
-            
-        item_metadata:Dict[str, List[DTO.VariableMetadataDTO]] = {}
-        for item in catalog_items: 
-            if item.is_err:
-                L.error(f"Failed to fetch catalog item {item.unwrap_err()}")
-                continue
-            item_model = item.unwrap()
+        # 5. Build lookup and metadata maps
+        item_lookup: Dict[str, str] = {}
+        item_metadata: Dict[str, List[DTO.VariableMetadataDTO]] = {}
+        for doc in item_docs:
+            item_model = M.CatalogItemX(**doc)
             item_lookup[item_model.catalog_item_id] = item_model.name
+            if item_model.catalog_type is None:
+                continue
             item_metadata.setdefault(item_model.catalog_type.value, []).append(
                 DTO.VariableMetadataDTO(
                     code=item_model.code,
                     name=item_model.name,
                     value=item_model.value,
-                    description=item_model.description
+                    description=item_model.description,
                 )
             )
-            
-            
-        # item_lookup = {
-        #     item.catalog_item_id: item.name
-        #     for item in catalog_items if item is not None
-        # }
 
-        # 6. Hydrate and build the DTOs
+        # 6. Batch-fetch observatory memberships for all returned products
+        obs_link_docs = await self.observatory_product_link_repository.collection.find(
+            {"product_id": {"$in": product_ids}},
+            {"product_id": 1, "observatory_id": 1, "_id": 0},
+        ).to_list(length=None)
+        product_to_obs_ids: Dict[str, List[str]] = {}
+        for doc in obs_link_docs:
+            product_to_obs_ids.setdefault(doc["product_id"], []).append(doc["observatory_id"])
+
+        # 7. Hydrate and build the DTOs
         response_dtos:List[DTO.ProductXDTO] = []
         for p in products:
             # Get the raw item IDs linked to this specific product
@@ -1703,6 +2105,7 @@ class SearchService:
             )
             dto.tags = p_item_ids
             dto.attributes = human_readable_attributes
+            dto.observatory_ids = product_to_obs_ids.get(p.product_id, [])
             default_spatial_var =   item_metadata.get("SPATIAL", [])
             dto.spatial_variable =  default_spatial_var[0] if default_spatial_var else DTO.VariableMetadataDTO()
             default_temporal_var =   item_metadata.get("TEMPORAL", [])
@@ -1710,8 +2113,32 @@ class SearchService:
             dto.interest_variable = item_metadata.get("INTEREST", [])
             response_dtos.append(dto)
 
+        if not no_cache:
+            self._product_cache[cache_key] = response_dtos
+        if self.suggestion_repository:
+            tracking_key = observatory_id if observatory_id else "__global__"
+            asyncio.create_task(self.suggestion_repository.record_hit(tracking_key, query))
         return Ok(response_dtos)
-    async def search_data_records(self, query_str: str, observatory_id: Optional[str] = None, skip: int = 0, limit: int = 100):
+
+    async def get_search_suggestions(self, observatory_id: str, limit: int = 5) -> Result[List[DTO.SearchSuggestionItemDTO], EX.JubError]:
+        try:
+            if not self.suggestion_repository:
+                return Ok([])
+            suggestions = await self.suggestion_repository.get_top(observatory_id, limit)
+            return Ok([DTO.SearchSuggestionItemDTO(query=s.query, hit_count=s.hit_count) for s in suggestions])
+        except Exception as e:
+            return Err(EX.JubError.from_exception(e))
+
+    async def get_observatory_search_suggestions(self, limit: int = 5) -> Result[List[DTO.SearchSuggestionItemDTO], EX.JubError]:
+        try:
+            if not self.suggestion_repository:
+                return Ok([])
+            suggestions = await self.suggestion_repository.get_top("__observatories__", limit)
+            return Ok([DTO.SearchSuggestionItemDTO(query=s.query, hit_count=s.hit_count) for s in suggestions])
+        except Exception as e:
+            return Err(EX.JubError.from_exception(e))
+
+    async def search_data_records(self, query_str: str, observatory_id: Optional[str] = None, skip: int = 0, limit: int = 100, strict: bool = True):
         try:
             ast = QueryAST.parse(query_str)
             # DataRecord has no observatory_id field — do NOT add it to the match filter
@@ -1722,11 +2149,29 @@ class SearchService:
                 group  = query.group
 
                 if prefix == SPATIAL_VARIABLE:
-                    match_filter.update(await self._build_spatial_filter(group))
+                    if not strict:
+                        # Lenient: _build_spatial_filter always returns a non-empty dict
+                        # (falls back to the raw string when the identifier is unknown).
+                        # Check resolution explicitly so that VS(NOWHERE) is dropped instead
+                        # of producing a filter that matches zero records.
+                        cond = group.conditions[0]
+                        leaf = (cond.item_path[-1]
+                                if isinstance(cond.item_path, list) and cond.item_path
+                                else cond.item_path or cond.catalog_value)
+                        if leaf and leaf != "*":
+                            resolved_ids = await self.__resolve_item_ids_for_value(leaf)
+                            if not resolved_ids:
+                                continue  # identifier unknown — skip this clause
+                    f = await self._build_spatial_filter(group)
+                    match_filter.update(f)
                 elif prefix == TEMPORAL_VARIABLE:
-                    match_filter.update(ASTToMongoTranslator._build_temporal(group))
+                    f = ASTToMongoTranslator._build_temporal(group)
+                    if f or strict:
+                        match_filter.update(f)
                 elif prefix == INTEREST_VARIABLE:
-                    match_filter.update(await self._build_interest_filter(group))
+                    f = await self._build_interest_filter(group)
+                    if f or strict:
+                        match_filter.update(f)
                 # VO / BY are aggregation-only; skip for raw record fetch
 
             cursor = self.data_records_repository.collection.find(match_filter, {"_id": 0}).skip(skip).limit(limit)
@@ -1825,6 +2270,10 @@ class SearchService:
 
     async def _build_interest_filter(self, group: ConditionGroup) -> dict:
         """Builds a resolved $match filter for VI(...) conditions."""
+        # VI(*) — global wildcard, no filter
+        if group.logic == "SINGLE" and group.conditions[0].operator == "WILDCARD" and group.conditions[0].catalog_value == "*":
+            return {}
+
         resolved_ids: List[str] = []
         for cond in group.conditions:
             raw_combined = ASTToMongoTranslator._format_id(cond.catalog_value, cond.item_path)
@@ -1848,10 +2297,16 @@ class SearchService:
 
 
     def __is_global_wildcard(self, condition: Condition) -> bool:
-            """Checks if the user just passed '*' with no prefix (e.g., VS(*))."""
+            """
+            Returns True only for a bare * wildcard (VS(*), VI(*), VT(*)).
+            EXACT conditions with an empty item_path — e.g. VI(FEMALE) which the parser
+            produces as (operator=EXACT, catalog_value="FEMALE", item_path=[]) — are NOT
+            wildcards and must not be skipped.
+            """
+            if condition.operator != "WILDCARD":
+                return False
             path = condition.item_path
             L.debug(f"Checking if condition {condition} is a global wildcard. Path: {path}")
-            # Check for strings "*", "", or lists ["*"], []
             if isinstance(path, list):
                 return len(path) == 0 or (len(path) == 1 and path[0] == "*")
             return path == "*" or path == ""
@@ -1863,10 +2318,10 @@ class SearchService:
         try:
             # 1. Parse string to AST
             ast = QueryAST.parse(query)
-            print("AST",ast)
+            # print("AST",ast)
             # 2. Resolve AST conditions into required sets of Catalog Item IDs
             required_sets_res = await self._build_required_sets(ast)
-            print("Required Sets Result:", required_sets_res)
+            # print("Required Sets Result:", required_sets_res)
 
             # print("_"*20)
             if required_sets_res.is_err:
@@ -1921,28 +2376,33 @@ class SearchService:
                     if not skip_group:
                         required_sets.append(list(combined_set))
                     
-                # If AND logic: Every condition becomes its OWN separate requirement set.
                 elif query.group.logic == "AND":
-                    intersected_sets = None
+                    # Temporal AND (e.g. VT(>= 2021 AND <= 2024)): intersect the resolved
+                    # ID sets so only items in the full range survive.
+                    # Cross-catalog AND (e.g. VI(SEX AND AGE)): separate required_sets so
+                    # the pipeline checks the product has at least one tag from EACH set.
+                    is_temporal = query.catalog_prefix == TEMPORAL_VARIABLE
+                    intersected: Optional[set] = None
 
                     for cond in query.group.conditions:
-                        
                         if self.__is_global_wildcard(cond):
-                            continue  # Skip this condition, it doesn't restrict the search
+                            continue
 
                         res = await self._resolve_condition(cond)
-                        if res.is_err: 
+                        if res.is_err:
                             L.error(f"Failed to resolve condition {cond}: {res.unwrap_err()}")
                             return res
-                        conds_ids = set(res.unwrap())
+                        conds_ids = res.unwrap()
 
-                        if intersected_sets is None:
-                            intersected_sets = conds_ids
-                        else:                            
-                            intersected_sets = intersected_sets.intersection(conds_ids)
+                        if is_temporal:
+                            conds_set = set(conds_ids)
+                            intersected = conds_set if intersected is None else intersected & conds_set
+                        else:
+                            if conds_ids:
+                                required_sets.append(conds_ids)
 
-                    if intersected_sets is not None:
-                        required_sets.append(list(intersected_sets))
+                    if is_temporal and intersected is not None:
+                        required_sets.append(list(intersected))
 
             # print("REQUIRED",required_sets)
             return Ok(required_sets)
@@ -2102,7 +2562,19 @@ class SearchService:
                 return Ok(valid_ids)
             
             elif condition.operator == ConditionOperators.EXACT.value:
-                return Ok([target_id])
+                # Multiple observatories can have different catalog_item_ids for the
+                # same logical value (e.g., "CAM" exists in obs-1, obs-2, obs-3 with
+                # different IDs). Return ALL matching IDs so the pipeline intersection
+                # works regardless of which observatory the product belongs to.
+                cursor = self.catalog_item_repository.collection.find({
+                    "$or": [
+                        {"value": raw_target.upper()},
+                        {"catalog_item_id": raw_target},
+                    ]
+                })
+                docs = await cursor.to_list(length=None)
+                all_ids = [doc["catalog_item_id"] for doc in docs]
+                return Ok(all_ids if all_ids else [target_id])
             
             else:
                 L.error(f"Unsupported operator in condition: {condition.operator}")
@@ -2487,11 +2959,11 @@ class TasksService:
         
         return await self.task_repo.insert(new_task)
 
-    async def get_user_tasks(self, user_id: str, limit: int = 50) -> Result[List[DTO.TaskXDTO], EX.JubError]:
+    async def get_user_tasks(self, user_id: str, skip: int = 0, limit: int = 50) -> Result[List[DTO.TaskXDTO], EX.JubError]:
         """
         Fetches the recent tasks to populate the UI list.
         """
-        result = await self.task_repo.get_tasks_by_user(user_id, limit)
+        result = await self.task_repo.get_tasks_by_user(user_id, skip, limit)
         if result.is_err:
             L.error(f"Failed to fetch tasks for user {user_id}: {result.unwrap_err()}")
             return Err(EX.JubError(f"Failed to fetch tasks: {result.unwrap_err()}"))
@@ -2800,12 +3272,14 @@ class ServiceXService:
         stage_repo:    R.StageRepository,
         pattern_repo:  R.PatternRepository,
         bb_repo:       R.BuildingBlockRepository,
+        link_manager:  GraphLinkManager,
     ):
         self.repo          = repo
         self.workflow_repo = workflow_repo
         self.stage_repo    = stage_repo
         self.pattern_repo  = pattern_repo
         self.bb_repo       = bb_repo
+        self.link_manager  = link_manager
 
     async def create(self, dto: DTO.ServiceCreateDTO) -> Result[M.ServiceX, EX.JubError]:
         model = M.ServiceX(
@@ -2850,6 +3324,7 @@ class ServiceXService:
         res = await self.repo.delete(service_id)
         if res.is_err:
             return Err(res.unwrap_err())
+        await self.link_manager.observatory_service_link_repository.collection.delete_many({"service_id": service_id})
         return Ok(DTO.ServiceDeleteResponseDTO(deleted=True, service_id=service_id))
 
     async def query_services(self, dsl: str, skip: int = 0, limit: int = 100) -> Result[List[M.ServiceX], EX.JubError]:
@@ -2910,7 +3385,7 @@ class ServiceXService:
                     workflow_detail = DTO.WorkflowDetailDTO.from_model(wf, stage_details)
 
             hydrated.append(DTO.ServiceDetailDTO.from_model(service, workflow_detail))
-        print(hydrated)
+        # print(hydrated)
         return Ok(hydrated)
 
     async def create_full(self, dto: DTO.ServiceIndexDTO) -> Result[DTO.ServiceIndexResponseDTO, EX.JubError]:
@@ -3005,16 +3480,32 @@ class ServiceXService:
 
 
 class DataIngestionService:
-    def __init__(self, source_repo: R.DataSourceRepository, record_repo: R.DataRecordsRepository):
+    def __init__(self, source_repo: R.DataSourceRepository, record_repo: R.DataRecordsRepository, link_manager: GraphLinkManager):
         self.source_repo = source_repo
         self.record_repo = record_repo
+        self.link_manager = link_manager
 
-    async def register_data_source(self, name: str, description: str, bucket_id: str="", ball_id: str="") -> Result[M.DataSource, EX.JubError]:
+    async def register_data_source(
+        self, 
+        name: str, 
+        description: str,
+        source_id: Optional[str] = None,
+        bucket_id: str = "",
+        ball_id: str = ""
+    ) -> Result[M.DataSource, EX.JubError]:
         """
         Registers the CSV file metadata in the database.
         """
+        # exists = self.source_repo.get_by_id()
+        
+        source_id   = source_id or f"src_{uuid.uuid4().hex[:12]}"
+
+        exists = await self.source_repo.get_by_id(source_id)
+        if exists.is_ok:
+            return Err(EX.Conflict(f"Data source with ID '{source_id}' already exists."))
+
         new_source = M.DataSource(
-            source_id   = f"src_{uuid.uuid4().hex[:12]}",
+            source_id   = source_id,
             name        = name,
             description = description,
             format      = ENUMS.DataSourceFormatEnum.CSV,
@@ -3054,9 +3545,15 @@ class DataIngestionService:
             
         return Ok(total_inserted)
 
+    async def update_data_source(self, source_id: str, data: dict) -> Result[M.DataSource, EX.JubError]:
+        exists = await self.source_repo.get_by_id(source_id)
+        if exists.is_err:
+            return Err(EX.NotFound(f"Data source '{source_id}' not found."))
+        return await self.source_repo.update(source_id, data)
+
     async def delete_data_source(self, source_id: str) -> Result[bool, EX.JubError]:
         """
-        Removes the data source and cascades the deletion to all its records.
+        Removes the data source, all its records, and cleans up observatory links.
         """
         # Guard: ensure the source exists before attempting deletion
         exists = await self.source_repo.get_by_id(source_id)
@@ -3070,6 +3567,9 @@ class DataIngestionService:
 
         # 2. Delete the source metadata
         delete_source_result = await self.source_repo.delete(source_id)
+
+        # 3. Clean up observatory links
+        await self.link_manager.observatory_datasource_link_repository.collection.delete_many({"source_id": source_id})
         return delete_source_result
     
 
@@ -3161,6 +3661,10 @@ class DataQueryService:
         return {"spatial_id": unique[0]} if len(unique) == 1 else {"spatial_id": {"$in": unique}}
 
     async def _build_interest_filter(self, group: ConditionGroup) -> dict:
+        # VI(*) — global wildcard, no filter
+        if group.logic == "SINGLE" and group.conditions[0].operator == "WILDCARD" and group.conditions[0].catalog_value == "*":
+            return {}
+
         resolved: List[str] = []
         for cond in group.conditions:
             raw = ASTToMongoTranslator._format_id(cond.catalog_value, cond.item_path)

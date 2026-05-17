@@ -1,11 +1,10 @@
 import os
-from typing import List, Dict
+import time as T
+from typing import List
 from fastapi import Depends, APIRouter, status
 import jubapi.services.v2 as S
 import jubapi.middlewares as MX
-import jubapi.models.v2 as M
 import jubapi.dto.v2 as DTO
-import commonx.dto.xolo as XoloDTO
 from jubapi.log.log import Log
 import jubapi.errors as EX
 
@@ -23,32 +22,61 @@ async def get_tasks_stats(
     user: DTO.UserProfileDTO = Depends(MX.get_current_user)
 ):
     try:
+        t0 = T.monotonic()
         stats_result = await service.get_stats(user_id=user.user_id)
         if stats_result.is_err:
             e = stats_result.unwrap_err()
-            L.error(f"Error fetching tasks stats for user {user.user_id}: {e.detail}")
+            L.error({
+                "action":"tasks.get_stats",
+                "input":{"user_id": user.user_id},
+                "error":str(e),
+                "duration_ms": (T.monotonic() - t0) * 1000
+            })
             raise e.to_http_exception()
         
         stats = stats_result.unwrap()
+        L.info({
+            "action":"tasks.get_stats",
+            "input":{"user_id": user.user_id},
+            "duration_ms": (T.monotonic() - t0) * 1000
+        })
         return stats
     except Exception as e:
-        L.error(f"Unexpected error while fetching tasks stats: {str(e)}")
+        L.error({
+            "action":"tasks.get_stats",
+            "input":{"user_id": user.user_id},
+            "error":str(e),
+            "duration_ms": (T.monotonic() - t0) * 1000
+        })
         raise EX.UnknownError(detail="Unexpected error while fetching tasks stats").to_http_exception()
 
 @router.get("", response_model=List[DTO.TaskXDTO])
 async def get_my_tasks(
     limit: int = 50,
+    skip: int = 0,
     current_user: DTO.UserProfileDTO = Depends(MX.get_current_user),
     task_srv: S.TasksService = Depends(MX.get_tasks_service) 
 ):
     """
     Fetches the recent tasks for the authenticated user to populate the UI list.
     """
-    result = await task_srv.get_user_tasks(current_user.user_id, limit)
+    t0 = T.monotonic()
+    result = await task_srv.get_user_tasks(current_user.user_id, skip, limit)
     
     if result.is_err:
+        L.error({
+            "action":"tasks.get_my_tasks",
+            "input":{"user_id": current_user.user_id, "skip": skip, "limit": limit},
+            "error":str(result.unwrap_err()),
+            "duration_ms": (T.monotonic() - t0) * 1000
+        })
         raise result.unwrap_err().to_http_exception()
-        
+    
+    L.info({
+        "action":"tasks.get_my_tasks",
+        "input":{"user_id": current_user.user_id, "skip": skip, "limit": limit},
+        "duration_ms": (T.monotonic() - t0) * 1000
+    })
     return result.unwrap()
 
 
@@ -58,11 +86,22 @@ async def get_task_details(
     current_user: DTO.UserProfileDTO = Depends(MX.get_current_user),
     task_srv: S.TasksService = Depends(MX.get_tasks_service)
 ):
+    t0 = T.monotonic()
     result = await task_srv.get_task_details(task_id,current_user.user_id)
     
     if result.is_err:
+        L.error({
+            "action":"tasks.get_task_details",
+            "input":{"user_id": current_user.user_id, "task_id": task_id},
+            "error":str(result.unwrap_err()),
+            "duration_ms": (T.monotonic() - t0) * 1000
+        })
         raise result.unwrap_err().to_http_exception()
-        
+    L.info({
+        "action":"tasks.get_task_details",
+        "input":{"user_id": current_user.user_id, "task_id": task_id},
+        "duration_ms": (T.monotonic() - t0) * 1000
+    })
     return result.unwrap()
 
 
@@ -81,8 +120,15 @@ async def complete_task(
 
     No user authentication required — this is a machine-to-machine endpoint.
     """
+    t0 = T.monotonic()
     task_result = await task_srv.complete_task(task_id, payload.success, payload.message)
     if task_result.is_err:
+        L.error({
+            "action":"tasks.complete_task",
+            "input":{"task_id": task_id, "success": payload.success, "message": payload.message},
+            "error":str(task_result.unwrap_err()),
+            "duration_ms": (T.monotonic() - t0) * 1000
+        })
         raise task_result.unwrap_err().to_http_exception()
 
     task             = task_result.unwrap()
@@ -91,6 +137,20 @@ async def complete_task(
     if payload.success:
         enable_result = await obs_svc.enable_observatory(task.observatory_id)
         obs_enabled   = enable_result.is_ok
+        if not obs_enabled:
+            L.error({
+                "action":"tasks.complete_task.enable_observatory",
+                "input":{"observatory_id": task.observatory_id},
+                "error":str(enable_result.unwrap_err()),
+                "duration_ms": (T.monotonic() - t0) * 1000
+            })
+        else:
+            L.info({
+                "action":"tasks.complete_task.enable_observatory",
+                "input":{"observatory_id": task.observatory_id},
+                "duration_ms": (T.monotonic() - t0) * 1000
+            })
+    
 
     return DTO.TaskCompleteResponseDTO(
         task_id             = task_id,
@@ -110,11 +170,21 @@ async def retry_failed_task(
     Triggers a retry for a failed task. 
     Appends a new attempt to the history and resets the progress state.
     """
-
+    t0 = T.monotonic()
     result = await task_srv.retry_task(task_id,current_user.user_id)
     
     if result.is_err:
         # If the task doesn't exist or is already running
+        L.error({
+            "action":"tasks.retry_failed_task",
+            "input":{"user_id": current_user.user_id, "task_id": task_id},
+            "error":str(result.unwrap_err()),
+            "duration_ms": (T.monotonic() - t0) * 1000
+        })
         raise result.unwrap_err().to_http_exception()
-        
+    L.info({
+        "action":"tasks.retry_failed_task",
+        "input":{"user_id": current_user.user_id, "task_id": task_id},
+        "duration_ms": (T.monotonic() - t0) * 1000
+    })
     # return {"status": "success", "message": "Task queued for retry."}

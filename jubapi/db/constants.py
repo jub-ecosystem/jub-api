@@ -8,6 +8,7 @@ class CollectionNames(Enum):
     CATALOG_ITEM_ALIASES             = "catalog_item_aliases"
     
     OBSERVATORY_PRODUCT_LINKS        = "observatory_product_links"
+    PRODUCT_PRODUCT_LINKS            = "product_product_links"
     PRODUCT_CATALOGS_ITEM_LINKS      = "product_catalogs_item_links"
     CATALOG_ITEM_RELATIONSHIPS       = "catalog_item_relationships"
     CATALOG_CATALOG_ITEM_LINKS       = "catalog_catalog_item_links"
@@ -27,10 +28,14 @@ class CollectionNames(Enum):
     CATALOG_ITEMS_V1                = "catalog_items_v1"
     CATALOG_ITEM_VALUES_V1          = "catalog_item_values_v1"
 
+    OBSERVATORY_SERVICE_LINKS        = "observatory_service_links"
+    OBSERVATORY_DATASOURCE_LINKS     = "observatory_datasource_links"
+
     # ── Service / Workflow domain ──────────────────────────────────────────
     BUILDING_BLOCKS                 = "building_blocks"
     PATTERNS                        = "patterns"
     STAGES                          = "stages"
     WORKFLOWS                       = "workflows"
     SERVICES                        = "services"
+    OBSERVATORY_SEARCH_SUGGESTIONS  = "observatory_search_suggestions"
 

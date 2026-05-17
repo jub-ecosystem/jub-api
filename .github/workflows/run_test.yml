@@ -16,6 +16,7 @@ jobs:
       JUB_LOG_PATH: ${{ github.workspace }}/log
       JUB_DEPLOY_ENV_FILE_PATH: ${{ github.workspace }}/.env.dev
       JUB_ENV_FILE_PATH: ${{ github.workspace }}/.env.test
+      JUB_STORAGE_PATH: ${{ github.workspace }}/jub
     strategy:  
       matrix:  
         python-version: ["3.10"]  

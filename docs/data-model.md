@@ -13,9 +13,10 @@ Observatory
   │                                    └──► CatalogItem ──► child CatalogItem
   │                                                   └──► CatalogItemAlias
   │  observatory_product_links
-  └──────────────────────────────► Product
-                                       │  product_catalogs_item_links
-                                       └──► CatalogItem (tags)
+  └──────────────────────────────► Product ◄──────────────────────► Product
+                                       │  product_catalogs_item_links    │
+                                       └──► CatalogItem (tags)           │
+                                                        product_product_links (symmetric)
 
 DataSource ──► DataRecord
                    ├── spatial_id      → catalog_item_id
@@ -98,8 +99,11 @@ A dataset or analytical report. Tagged with catalog items across multiple dimens
 | `product_id` | string | Primary key |
 | `name` | string | Human-readable product name |
 | `description` | string | Short description |
+| `metadata` | dict | Arbitrary string key-value pairs (e.g. `extension`, `format`) |
 
 Tags (links to catalog items) drive DSL-based product discovery.
+
+Products can also be related to each other via `product_product_links`. The relationship is symmetric — no source/target distinction from the API perspective. Internally, IDs are normalized (lexicographic order) to guarantee a unique link per pair.
 
 ---
 
@@ -160,7 +164,8 @@ Tracks the status of a background or external operation.
 | `observatory_catalog_links` | Observatory → Catalog (with `level`) |
 | `catalog_catalog_item_links` | Catalog → CatalogItem |
 | `product_catalogs_item_links` | Product → CatalogItem (tags) |
+| `product_product_links` | Product ↔ Product (symmetric — IDs stored in normalized order) |
 | `catalog_item_relationships` | CatalogItem → child CatalogItem (hierarchy) |
 | `catalog_item_catalog_alias_links` | CatalogItem → CatalogItemAlias |
 
-`GraphLinkManager` owns all operations on these collections and enforces cascading deletions.
+`GraphLinkManager` owns all operations on these collections and enforces cascading deletions. When a product is deleted, all its `product_product_links` are removed automatically.

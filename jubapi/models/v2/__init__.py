@@ -26,6 +26,13 @@ class TimestampedModel(BaseModel):
    updated_at: DT.datetime = Field(default_factory=lambda: DT.datetime.now(DT.timezone.utc))
 
 
+class ObservatorySearchSuggestion(BaseModel):
+    observatory_id: str
+    query: str
+    hit_count: int = Field(default=1)
+    last_used: DT.datetime = Field(default_factory=lambda: DT.datetime.now(DT.timezone.utc))
+
+
 class Descriptable(TimestampedModel):
   description: Optional[str] = Field(default="")
   metadata: Optional[Dict[str, str]] = Field(default_factory=dict)
@@ -144,10 +151,22 @@ class ObservatoryToProductLink(TimestampedModel):
 class CatalogItemToProductLink(TimestampedModel):
     product_id: str
     catalog_item_id: str
+
+class ProductToProductLink(TimestampedModel):
+    source_product_id: str
+    target_product_id: str
   
 class CatalogItemRelationship(TimestampedModel):
     parent_id: str # e.g., ID for "MX"
     child_id: str  # e.g., ID for "SLP"
+
+class ObservatoryToServiceLink(TimestampedModel):
+    observatory_id: str
+    service_id: str
+
+class ObservatoryToDataSourceLink(TimestampedModel):
+    observatory_id: str
+    source_id: str
   
 
 

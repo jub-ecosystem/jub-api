@@ -379,7 +379,7 @@ All v2 controllers live under `jubapi/controllers/v2/`. Every router is register
 
 | File | Prefix | Responsibility |
 |---|---|---|
-| `observatories.py` | `/api/v2/observatories` | Observatory CRUD, setup flow with task, catalog and product links, view counter, reviews |
+| `observatories.py` | `/api/v2/observatories` | Observatory CRUD, setup flow with task, catalog/product/service/datasource links, view counter, reviews |
 | `products.py` | `/api/v2/products` | Product CRUD, tag management, file upload with background task tracking |
 | `catalogs.py` | `/api/v2/catalogs` | Catalog CRUD |
 | `catalogs_items.py` | `/api/v2/catalog-items` | Catalog item CRUD and alias management |
@@ -401,7 +401,7 @@ All v2 services live in `jubapi/services/v2/__init__.py`.
 
 | Class | Responsibility |
 |---|---|
-| `ObservatoriesService` | Observatory lifecycle, catalog and product linking, view counter, reviews |
+| `ObservatoriesService` | Observatory lifecycle, catalog/product/service/datasource linking, view counter, reviews |
 | `ProductService` | Product CRUD and catalog item tag linking |
 | `CatalogService` | Catalog and catalog item management |
 | `TasksService` | Task creation, completion (success or failure), progress updates, retry |
@@ -431,6 +431,8 @@ All repositories live in `jubapi/repositories/v2/__init__.py` and extend `BaseRe
 | `ReviewRepository` | `observatory_reviews` | Adds `get_by_observatory()` and `get_by_user_and_observatory()` |
 | `ObservatoryToProductLinkRepository` | `observatory_product_links` | Edge table between Observatory and Product |
 | `ObservatoryToCatalogLinkRepository` | `observatory_catalog_links` | Edge table between Observatory and Catalog |
+| `ObservatoryToServiceLinkRepository` | `observatory_service_links` | Edge table between Observatory and Service |
+| `ObservatoryToDataSourceLinkRepository` | `observatory_datasource_links` | Edge table between Observatory and DataSource |
 | `CatalogToCatalogItemLinkRepository` | `catalog_catalog_item_links` | Edge table between Catalog and CatalogItem |
 | `ProductToCatalogItemLinkRepository` | `product_catalogs_item_links` | Edge table between Product and CatalogItem (tags) |
 | `CatalogItemRelationshipRepository` | `catalog_item_relationships` | Peer relationship between CatalogItems |
@@ -473,6 +475,26 @@ All models that need timestamps extend `TimestampedModel` which adds `created_at
 | `WorkflowX` | `workflow_id`, `name`, `stages` | Ordered list of stages |
 | `ServiceX` | `service_id`, `name`, `owner_id`, `public`, `provider`, `workflow_id` | Named service that wraps a workflow. `provider` is one of `XELHUA`, `NEZ`, `EXTERNAL`, `OTHER` |
 
+
+## Licensing
+
+STORI Core / JUB Core is distributed under a **dual-licensing model**:
+
+| Use case | License |
+|---|---|
+| Open-source / academic / community projects | [GNU GPL v3](LICENSE) — copyleft applies; derivatives must also be GPL |
+| Proprietary / commercial / closed-source products | [Commercial EULA](EULA.md) — obtain a license from the project team |
+
+If your project is open-source and you can comply with the GPL, no action is needed — use the
+software freely under the terms of `LICENSE`. If you need to embed this software in a proprietary
+product or SaaS offering without open-sourcing your code, contact us to obtain a commercial license:
+
+**Email:** ignacio.bcastillo@gmail.com
+**Subject:** Commercial License Inquiry — STORI Core / JUB Core
+
+Copyright (C) 2026 MADTEC-2025-M-478 Project Team. All rights reserved.
+
+---
 
 ## DTOs
 

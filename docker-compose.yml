@@ -22,6 +22,8 @@ services:
     - ${JUB_PORT:-6000}:${JUB_PORT:-6000}
   networks:
     - jub
+  volumes:
+    - jub-data:/jub
   command: uvicorn jubapi.server:app --host ${JUB_HOST:-0.0.0.0} --port ${JUB_PORT:-6000} --reload
 
  xolo-db:
@@ -72,6 +74,7 @@ networks:
     external: true
 volumes:
   jub-db:
+  jub-data:
   xolo-db:
   xolo-data:
   xolo-cache-data:

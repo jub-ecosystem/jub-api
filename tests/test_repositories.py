@@ -28,8 +28,10 @@ def repos(test_db):
             cat_item_links_repo,
             prod_cat_item_links_repo,
             cat_item_rels_repo,
-            cat_item_val_links_repo
-       
+            cat_item_val_links_repo,
+            R.ObservatoryToServiceLinkRepository(test_db[CollectionNames.OBSERVATORY_SERVICE_LINKS.value]),
+            R.ObservatoryToDataSourceLinkRepository(test_db[CollectionNames.OBSERVATORY_DATASOURCE_LINKS.value]),
+            R.ProductToProductLinkRepository(test_db[CollectionNames.PRODUCT_PRODUCT_LINKS.value]),
         ),
         "db": test_db # Pass the raw db just to check link collections directly
     }

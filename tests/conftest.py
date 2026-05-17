@@ -71,6 +71,8 @@ async def test_db():
         CollectionNames.CATALOG_CATALOG_ITEM_LINKS.value,
         CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value,
         CollectionNames.OBSERVATORY_CATALOG_LINKS.value,
+        CollectionNames.OBSERVATORY_SERVICE_LINKS.value,
+        CollectionNames.OBSERVATORY_DATASOURCE_LINKS.value,
         CollectionNames.BUILDING_BLOCKS.value,
         CollectionNames.PATTERNS.value,
         CollectionNames.STAGES.value,

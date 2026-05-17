@@ -228,7 +228,11 @@ class ASTToMongoTranslator:
     @classmethod
     def _build_temporal(cls, group: 'ConditionGroup') -> dict:
         """Handles VT(...) - Maps to temporal_id"""
-        
+
+        # VT(*) — global wildcard, no filter
+        if group.logic == "SINGLE" and group.conditions[0].operator == "WILDCARD" and not group.conditions[0].item_path:
+            return {}
+
         # 1. Handle OR logic for exact dates (e.g., VT(2025 OR 2026))
         if group.logic == "OR":
             exact_dates = []
@@ -263,8 +267,13 @@ class ASTToMongoTranslator:
     @classmethod
     def _build_interest(cls, group: 'ConditionGroup') -> dict:
         """Handles VI(...) - Maps to the interest_ids array"""
+
+        # VI(*) — global wildcard, no filter
+        if group.logic == "SINGLE" and group.conditions[0].operator == "WILDCARD" and group.conditions[0].catalog_value == "*":
+            return {}
+
         ids = [cls._format_id(c.catalog_value, c.item_path) for c in group.conditions]
-        
+
         if group.logic == "SINGLE":
             return {"interest_ids": ids[0]}
             

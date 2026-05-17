@@ -1,5 +1,6 @@
 import pytest
 import datetime
+from unittest.mock import MagicMock, AsyncMock
 from motor.motor_asyncio import AsyncIOMotorClient as MongoClient
 
 import jubapi.models.v2 as M
@@ -18,7 +19,9 @@ def record_repo(test_db):
 
 @pytest.fixture
 def ingestion_service(source_repo, record_repo):
-    return S.DataIngestionService(source_repo, record_repo)
+    link_mock = MagicMock()
+    link_mock.observatory_datasource_link_repository.collection.delete_many = AsyncMock(return_value=None)
+    return S.DataIngestionService(source_repo, record_repo, link_mock)
 
 # Helper for UTC dates
 def make_utc_date(year, month=1, day=1):
