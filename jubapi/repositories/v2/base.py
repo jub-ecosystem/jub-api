@@ -1,4 +1,4 @@
-from typing import TypeVar, Generic, List, Optional, Type
+from typing import TypeVar, Generic, List, Optional, Tuple, Type
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorCollection as Collection
 from option import Result, Ok, Err
@@ -22,10 +22,13 @@ class BaseRepository(Generic[T]):
         self.model_class = model_class
         self.id_field = id_field
 
-    async def find(self, query: dict, skip: int = 0, limit: int = 100) -> Result[List[T], EX.JubError]:
-        """Finds documents based on a MongoDB query dict."""
+    async def find(self, query: dict, skip: int = 0, limit: int = 100, sort: Optional[List[Tuple[str, int]]] = None) -> Result[List[T], EX.JubError]:
+        """Finds documents based on a MongoDB query dict. Pass `sort` for stable pagination."""
         try:
-            cursor = self.collection.find(query).skip(skip).limit(limit)
+            cursor = self.collection.find(query)
+            if sort:
+                cursor = cursor.sort(sort)
+            cursor = cursor.skip(skip).limit(limit)
             return Ok([self.model_class.model_validate(doc) for doc in await cursor.to_list(length=limit)])
         except Exception as e:
             L.error(f"Error fetching items: {e}")

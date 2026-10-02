@@ -23,6 +23,9 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     await ci.create_index([("value_type", ASCENDING), ("temporal_value", ASCENDING)], name="idx_ci_temporal_compound")
     await ci.create_index([("catalog_type", ASCENDING)], name="idx_ci_catalog_type")
 
+    # catalogs (GET /catalogs filters by type and sorts by name)
+    await db["catalogs"].create_index([("catalog_type", ASCENDING), ("name", ASCENDING)], name="idx_catalogs_type_name")
+
     # catalog_catalog_item_links
     ccil = db["catalog_catalog_item_links"]
     await ccil.create_index([("catalog_id", ASCENDING)], name="idx_ccil_catalog_id")

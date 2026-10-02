@@ -1,11 +1,13 @@
 from pydantic import BaseModel,Field
 from jubapi.storage import SAFE_ID_PATTERN
-from typing import Optional,List,Dict
+from typing import Optional,List,Dict,Generic,TypeVar
 import os
 import jubapi.models.v2 as M
 import jubapi.enums.v2 as ENUMS
 import datetime as DT
 # from jubapi.models.v2 import ObservatoryX,CatalogX
+
+T = TypeVar("T")
 
 
 class TasksStatsDTO(BaseModel):
@@ -449,6 +451,15 @@ class CatalogSummaryDTO(BaseModel):
     name: str
     value: str
     catalog_type: ENUMS.CatalogType
+
+
+class PageDTO(BaseModel, Generic[T]):
+    """Generic paginated response envelope."""
+    items: List[T] = Field(default_factory=list, description="Items in the current page")
+    total: int = Field(description="Total number of items matching the filters (across all pages)")
+    skip: int = Field(description="Number of items skipped before this page")
+    limit: int = Field(description="Maximum number of items in a page")
+    has_more: bool = Field(description="True if there are more items after this page")
 
 
 class CatalogUpdateDTO(BaseModel):

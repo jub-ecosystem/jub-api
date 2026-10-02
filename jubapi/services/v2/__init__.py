@@ -1,6 +1,7 @@
 
 import os
-import uuid 
+import re
+import uuid
 import asyncio
 import datetime as DT
 from option import Result,Ok,Err
@@ -1176,21 +1177,47 @@ class CatalogService:
                 catalog_type=catalog_type
             )
 
-    async def list_catalogs(self) -> Result[List[DTO.CatalogSummaryDTO], EX.JubError]:
-        """Returns a lightweight list of all catalogs."""
+    async def list_catalogs(
+        self,
+        catalog_types: Optional[List[ENUMS.CatalogType]] = None,
+        q: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> Result[DTO.PageDTO[DTO.CatalogSummaryDTO], EX.JubError]:
+        """Returns a page of lightweight catalogs, optionally filtered by type and by a name/value search."""
         try:
-            catalogs_result = await self.catalog_repository.find({})
+            query: Dict[str, Any] = {}
+            if catalog_types:
+                query["catalog_type"] = {"$in": [t.value for t in catalog_types]}
+            if q and q.strip():
+                pattern = {"$regex": re.escape(q.strip()), "$options": "i"}
+                query["$or"] = [{"name": pattern}, {"value": pattern}]
+
+            # Sort by name, then catalog_id as tie-breaker so pages never overlap or skip items.
+            count_result, catalogs_result = await asyncio.gather(
+                self.catalog_repository.count(query),
+                self.catalog_repository.find(query, skip=skip, limit=limit, sort=[("name", 1), ("catalog_id", 1)]),
+            )
+            if count_result.is_err:
+                return Err(count_result.unwrap_err())
             if catalogs_result.is_err:
                 L.error(f"Error fetching catalogs: {catalogs_result.unwrap_err()}")
-                return Err(EX.JubError(f"Error fetching catalogs: {catalogs_result.unwrap_err()}"))
-            catalogs = catalogs_result.unwrap()
-            dtos = [
+                return Err(catalogs_result.unwrap_err())
+
+            total = count_result.unwrap()
+            items = [
                 DTO.CatalogSummaryDTO(
-                    catalog_id=c.catalog_id, name=c.name, 
+                    catalog_id=c.catalog_id, name=c.name,
                     value=c.value, catalog_type=c.catalog_type
-                ) for c in catalogs
+                ) for c in catalogs_result.unwrap()
             ]
-            return Ok(dtos)
+            return Ok(DTO.PageDTO[DTO.CatalogSummaryDTO](
+                items    = items,
+                total    = total,
+                skip     = skip,
+                limit    = limit,
+                has_more = skip + len(items) < total,
+            ))
         except Exception as e:
             return Err(EX.UnknownError(detail=str(e), status_code=500))
 

@@ -1,8 +1,9 @@
 import os
 import time
-from typing import List
+from typing import List, Optional
 from fastapi.routing import APIRouter
-from fastapi import Depends, status
+from fastapi import Depends, Query, status
+import jubapi.enums.v2 as ENUMS
 import jubapi.services.v2 as S
 import jubapi.middlewares as MX
 from jubapi.log.log import Log
@@ -75,20 +76,25 @@ async def create_catalog_bulk_and_link(
     return response
 
 
-@router.get("", response_model=List[DTO.CatalogSummaryDTO])
+@router.get("", response_model=DTO.PageDTO[DTO.CatalogSummaryDTO])
 async def list_catalogs(
+    catalog_type: Optional[List[ENUMS.CatalogType]] = Query(None, description="Filter by catalog type. Repeat to match several: ?catalog_type=SPATIAL&catalog_type=TEMPORAL"),
+    q: Optional[str] = Query(None, max_length=100, description="Case-insensitive search on catalog name or value"),
+    skip: int = Query(0, ge=0, description="Number of catalogs to skip"),
+    limit: int = Query(50, ge=1, le=500, description="Maximum number of catalogs to return"),
     srv: S.CatalogService = Depends(MX.get_catalog_service),
     _: DTO.UserProfileDTO = Depends(MX.get_current_user)   # Ensure user is authenticated for this action
 ):
-    """Returns a lightweight list of all available catalogs."""
+    """Returns a paginated, lightweight list of catalogs, optionally filtered by type and name/value."""
     t0 = time.monotonic()
-    result = await srv.list_catalogs()
+    inputs = {"catalog_type": catalog_type, "q": q, "skip": skip, "limit": limit}
+    result = await srv.list_catalogs(catalog_types=catalog_type, q=q, skip=skip, limit=limit)
     if result.is_err:
-        log.error({"action": "controller.catalog.list", "error": str(result.unwrap_err().detail)})
+        log.error({"action": "controller.catalog.list", "error": str(result.unwrap_err().detail), "input": inputs})
         raise result.unwrap_err().to_http_exception()
-    data = result.unwrap()
-    log.info({"action": "controller.catalog.list", "duration_ms": int((time.monotonic()-t0)*1000), "result": {"count": len(data)}})
-    return data
+    page = result.unwrap()
+    log.info({"action": "controller.catalog.list", "duration_ms": int((time.monotonic()-t0)*1000), "input": inputs, "result": {"count": len(page.items), "total": page.total}})
+    return page
 
 
 @router.get("/{catalog_id}", response_model=DTO.CatalogResponseDTO)
