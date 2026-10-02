@@ -159,9 +159,11 @@ async def test_api_list_catalogs(async_client: AsyncClient, get_current_user):
     
     # 3. Validar
     assert response.status_code == 200
-    catalogs = response.json()
-    
-    # Asegurarnos de que sea una lista y contenga nuestro catálogo
+    page = response.json()
+
+    # La respuesta es un sobre paginado que contiene nuestro catálogo
+    assert set(page) == {"items", "total", "skip", "limit", "has_more"}
+    catalogs = page["items"]
     assert isinstance(catalogs, list)
     assert len(catalogs) > 0
     
@@ -247,3 +249,118 @@ async def test_api_get_catalog_not_found(async_client: AsyncClient, get_current_
     
     assert response.status_code == 404
     assert "not found" in response.text.lower()
+
+# ==========================================
+# GET /catalogs — FILTER + PAGINATION
+# ==========================================
+
+async def _seed_catalogs(async_client: AsyncClient, specs):
+    """Creates one empty catalog per (name, value, catalog_type) tuple."""
+    for name, value, catalog_type in specs:
+        res = await async_client.post("/api/v2/catalogs", json={"name": name, "value": value, "catalog_type": catalog_type, "items": []})
+        assert res.status_code == 200
+
+
+@pytest.fixture()
+async def seeded_catalogs(async_client: AsyncClient, test_db):
+    await _seed_catalogs(async_client, [
+        ("Estados",    "ESTADOS",    "SPATIAL"),
+        ("Municipios", "MUNICIPIOS", "SPATIAL"),
+        ("Años",       "ANIOS",      "TEMPORAL"),
+        ("Sexo",       "SEXO",       "INTEREST"),
+        ("Edad",       "EDAD",       "INTEREST"),
+    ])
+    return async_client
+
+
+@pytest.mark.asyncio
+async def test_list_catalogs_filter_single_type(seeded_catalogs: AsyncClient):
+    res = await seeded_catalogs.get("/api/v2/catalogs", params={"catalog_type": "SPATIAL"})
+    assert res.status_code == 200
+    page = res.json()
+    assert page["total"] == 2
+    assert {c["value"] for c in page["items"]} == {"ESTADOS", "MUNICIPIOS"}
+    assert all(c["catalog_type"] == "SPATIAL" for c in page["items"])
+
+
+@pytest.mark.asyncio
+async def test_list_catalogs_filter_multiple_types(seeded_catalogs: AsyncClient):
+    res = await seeded_catalogs.get("/api/v2/catalogs", params=[("catalog_type", "TEMPORAL"), ("catalog_type", "INTEREST")])
+    assert res.status_code == 200
+    page = res.json()
+    assert page["total"] == 3
+    assert {c["catalog_type"] for c in page["items"]} == {"TEMPORAL", "INTEREST"}
+
+
+@pytest.mark.asyncio
+async def test_list_catalogs_invalid_type_is_422(seeded_catalogs: AsyncClient):
+    res = await seeded_catalogs.get("/api/v2/catalogs", params={"catalog_type": "NOPE"})
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_list_catalogs_search_q(seeded_catalogs: AsyncClient):
+    res = await seeded_catalogs.get("/api/v2/catalogs", params={"q": "muni"})
+    page = res.json()
+    assert page["total"] == 1
+    assert page["items"][0]["value"] == "MUNICIPIOS"
+
+    # Combined with the type filter
+    res = await seeded_catalogs.get("/api/v2/catalogs", params={"q": "e", "catalog_type": "INTEREST"})
+    assert {c["value"] for c in res.json()["items"]} == {"SEXO", "EDAD"}
+
+    # Regex characters are treated literally
+    res = await seeded_catalogs.get("/api/v2/catalogs", params={"q": ".*"})
+    assert res.json()["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_list_catalogs_pagination(seeded_catalogs: AsyncClient):
+    seen = []
+    skip = 0
+    while True:
+        res = await seeded_catalogs.get("/api/v2/catalogs", params={"skip": skip, "limit": 2})
+        assert res.status_code == 200
+        page = res.json()
+        assert page["total"] == 5
+        assert page["skip"] == skip and page["limit"] == 2
+        seen.extend(c["catalog_id"] for c in page["items"])
+        if not page["has_more"]:
+            break
+        skip += 2
+
+    assert len(seen) == 5
+    assert len(set(seen)) == 5   # no overlap between pages
+
+    # Sorted by name
+    res = await seeded_catalogs.get("/api/v2/catalogs", params={"limit": 5})
+    names = [c["name"] for c in res.json()["items"]]
+    assert names == sorted(names)
+
+
+@pytest.mark.asyncio
+async def test_list_catalogs_skip_past_end(seeded_catalogs: AsyncClient):
+    res = await seeded_catalogs.get("/api/v2/catalogs", params={"skip": 100})
+    page = res.json()
+    assert page["items"] == [] and page["total"] == 5 and page["has_more"] is False
+
+
+@pytest.mark.asyncio
+async def test_list_catalogs_invalid_pagination_is_422(async_client: AsyncClient):
+    assert (await async_client.get("/api/v2/catalogs", params={"limit": 0})).status_code == 422
+    assert (await async_client.get("/api/v2/catalogs", params={"limit": 501})).status_code == 422
+    assert (await async_client.get("/api/v2/catalogs", params={"skip": -1})).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_list_catalogs_more_than_100(async_client: AsyncClient, test_db):
+    """The old endpoint silently capped at 100; total must reflect every catalog."""
+    await test_db.catalogs.insert_many([
+        {"catalog_id": f"cat_bulk_{i:03d}", "name": f"Bulk {i:03d}", "value": f"BULK_{i:03d}", "catalog_type": "REFERENCE", "level": 0}
+        for i in range(120)
+    ])
+    res = await async_client.get("/api/v2/catalogs", params={"catalog_type": "REFERENCE", "skip": 100, "limit": 50})
+    page = res.json()
+    assert page["total"] == 120
+    assert len(page["items"]) == 20
+    assert page["has_more"] is False

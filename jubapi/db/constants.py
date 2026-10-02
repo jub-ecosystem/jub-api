@@ -30,6 +30,7 @@ class CollectionNames(Enum):
 
     OBSERVATORY_SERVICE_LINKS        = "observatory_service_links"
     OBSERVATORY_DATASOURCE_LINKS     = "observatory_datasource_links"
+    OBSERVATORY_USER_LINKS           = "observatory_user_links"
 
     # ── Service / Workflow domain ──────────────────────────────────────────
     BUILDING_BLOCKS                 = "building_blocks"

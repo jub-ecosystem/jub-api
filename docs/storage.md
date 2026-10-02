@@ -1,131 +1,204 @@
 # Storage Backend
 
-JUB API uses an abstract `StorageBackend` to persist uploaded product files.
-The abstraction lets you swap storage providers (local disk, AWS S3, GCS, MictlanX, etc.)
-without changing any service or controller code.
+Product files (uploaded via `POST /api/v2/products/{product_id}/upload`) are stored through a
+small storage abstraction in `jubapi/storage/__init__.py`. Business logic only talks to the
+`StorageBackend` interface, so the place where bytes live can be changed with one environment
+variable.
 
----
+## How it works
 
-## Interface
+```
+controller / service / orphan job
+            │
+            ▼
+      StorageBackend  (abstract)
+      ├── LocalStorageBackend     FS        files on disk (default)
+      ├── InMemoryStorageBackend  MEMORY    python dict, lost on restart
+      └── MictlanXStorageBackend  MICTLANX  balls in a MictlanX bucket
+```
+
+Every file is addressed by a **key** made of path segments:
+
+```
+products/<product_id>/<job_id>/<filename>
+└──┬───┘
+namespace
+```
+
+Keys are always built with `storage.key_for(...)`, which rejects `/`, `\`, `.`, `..` and NUL in a
+segment, so ids and file names can never escape the `products` namespace.
+
+The interface (all methods are `async`):
+
+| Method | What it does |
+|---|---|
+| `put(key, data)` | Store bytes, return a URI for the stored object |
+| `get(key)` | Return `(data, cache_hit)` |
+| `list(prefix)` | All keys under `prefix`, oldest first (download picks the last one) |
+| `list_directories(prefix)` | Immediate child names, e.g. product ids under `products` |
+| `delete_prefix(prefix)` | Delete everything under `prefix`; refuses to wipe the whole namespace |
+
+The single backend instance is created in `jubapi/middlewares/__init__.py` by
+`create_storage_backend(...)` and injected with `Depends(MX.get_storage_backend)`.
+
+## Selecting a backend
+
+| Variable | Default | Used by | Purpose |
+|---|---|---|---|
+| `JUB_STORAGE_BACKEND` | `FS` | all | `FS`, `MEMORY` or `MICTLANX` (case-insensitive) |
+| `JUB_STORAGE_PATH` | `/jub` | FS | Base directory; files go to `<path>/products/...` |
+| `JUB_STORAGE_CACHE_MAX_BYTES` | 4 GB | FS, MICTLANX | Size of the read cache |
+| `JUB_STORAGE_CACHE_TTL` | `300` | FS, MICTLANX | Read cache TTL (seconds) |
+| `JUB_MICTLANX_URI` | – (required for MICTLANX) | MICTLANX | Router URI |
+| `JUB_MICTLANX_BUCKET_ID` | `jub` | MICTLANX | Bucket where balls are stored |
+| `JUB_MICTLANX_CLIENT_ID` | `jubapi` | MICTLANX | Client id used in MictlanX logs |
+
+An unknown `JUB_STORAGE_BACKEND`, or `MICTLANX` without `JUB_MICTLANX_URI`, raises a `ValueError`
+at startup instead of failing later on the first upload.
+
+### FS (default)
+
+Nothing to change. Example `.env`:
+
+```sh
+JUB_STORAGE_BACKEND=FS
+JUB_STORAGE_PATH=/jub
+```
+
+In code:
 
 ```python
-# jubapi/storage/__init__.py
+from jubapi.storage import LocalStorageBackend
 
-from abc import ABC, abstractmethod
-
-class StorageBackend(ABC):
-
-    @abstractmethod
-    async def put(self, key: str, data: bytes) -> str:
-        """
-        Persist *data* under *key* and return the canonical storage URI.
-        The URI is stored alongside the task and can be passed to indexing systems.
-        """
-
-    @abstractmethod
-    async def get(self, key: str) -> bytes:
-        """Retrieve the bytes previously stored under *key*."""
+storage = LocalStorageBackend(base_path="/tmp/jub_storage")
+key = storage.key_for("product-1", "job-1", "photo.jpg")   # products/product-1/job-1/photo.jpg
+await storage.put(key, b"...")
+data, from_cache = await storage.get(key)
 ```
 
----
+### MEMORY
 
-## Default implementation — `LocalStorageBackend`
+Good for tests or a quick run without disk. Data is lost on restart and is **not** shared
+between uvicorn workers.
 
-The default backend writes files to the local filesystem.
-Suitable for development and single-node deployments.
+```sh
+JUB_STORAGE_BACKEND=MEMORY
+```
 
 ```python
-class LocalStorageBackend(StorageBackend):
-    def __init__(self, base_path: str = "/tmp/jub_storage"):
-        ...
+from jubapi.storage import InMemoryStorageBackend
 
-    async def put(self, key: str, data: bytes) -> str:
-        # writes to /tmp/jub_storage/<key>
-        # returns the absolute file path
-
-    async def get(self, key: str) -> bytes:
-        # reads from /tmp/jub_storage/<key>
+storage = InMemoryStorageBackend()
+await storage.put(storage.key_for("product-1", "job-1", "a.csv"), b"x,y\n1,2\n")
 ```
 
----
+### MICTLANX
 
-## Key format
+1. Start a MictlanX router + peers (from the mictlanx repo):
 
-Files are stored under a deterministic key:
+   ```sh
+   cd mictlanx   # your clone of the MictlanX repo
+   chmod +x ./deploy_router.sh && ./deploy_router.sh
+   ```
 
-```
-products/{product_id}/{job_id}/{original_filename}
-```
+2. Point Jub to it:
 
-Example:
-```
-products/p_001/tsk_upload_001/breast_cancer_2024.csv
-```
+   ```sh
+   JUB_STORAGE_BACKEND=MICTLANX
+   JUB_MICTLANX_URI=mictlanx://mictlanx-router-0@localhost:60666/?protocol=http&api_version=4&http2=0
+   JUB_MICTLANX_BUCKET_ID=jub
+   ```
 
----
+   If Jub runs in Docker, replace `localhost` with the router's host name on the Docker network.
+   For several routers, separate them with commas:
+   `mictlanx://mictlanx-router-0@host-a:60666,mictlanx-router-1@host-b:60667/?protocol=http&api_version=4&http2=0`.
 
-## How to swap the backend
+3. Run the API as usual (`./run_local.sh`).
 
-1. Create a new class that extends `StorageBackend` and implements `put` and `get`.
+How it maps onto MictlanX:
 
-2. Replace the singleton in `jubapi/middlewares/__init__.py`:
+- Each Jub key becomes one **ball** in `JUB_MICTLANX_BUCKET_ID`. The ball id is
+  `sha256(key)`, so file names with any characters are safe.
+- The original key and the upload time are stored in the ball tags (`jub_key`,
+  `jub_created_at`). `list` reads the bucket metadata and uses those tags to rebuild the folder
+  view and the oldest-first order.
+- `delete_prefix` deletes each matching ball.
+- The `AsyncClient` is created lazily on first use, so the API starts even if the router is not
+  reachable yet (the first upload/download will fail instead).
+
+Using the backend directly:
 
 ```python
-# Before
-_storage_backend: StorageBackend = LocalStorageBackend()
+import asyncio
+from jubapi.storage import MictlanXStorageBackend
 
-# After — e.g. S3
-_storage_backend: StorageBackend = S3StorageBackend(
-    bucket="jub-data",
-    region="us-east-1",
-)
+async def main():
+    storage = MictlanXStorageBackend(
+        uri       = "mictlanx://mictlanx-router-0@localhost:60666/?protocol=http&api_version=4&http2=0",
+        bucket_id = "jub",
+    )
+    key = storage.key_for("product-1", "job-1", "hello.txt")
+    print(await storage.put(key, b"hello"))            # mictlanx://jub/<sha256>
+    print(await storage.list(storage.prefix_for("product-1")))
+    data, _ = await storage.get(key)
+    print(data)
+    print(await storage.delete_prefix(storage.prefix_for("product-1")))
+
+asyncio.run(main())
 ```
 
-No other code changes are required.
-
----
-
-## Example — S3 backend
+Which is the same as using the MictlanX client by hand:
 
 ```python
-import aioboto3
-from jubapi.storage import StorageBackend
+from mictlanx import AsyncClient
 
-class S3StorageBackend(StorageBackend):
-    def __init__(self, bucket: str, region: str):
-        self.bucket = bucket
-        self.region = region
-
-    async def put(self, key: str, data: bytes) -> str:
-        session = aioboto3.Session()
-        async with session.client("s3", region_name=self.region) as s3:
-            await s3.put_object(Bucket=self.bucket, Key=key, Body=data)
-        return f"s3://{self.bucket}/{key}"
-
-    async def get(self, key: str) -> bytes:
-        session = aioboto3.Session()
-        async with session.client("s3", region_name=self.region) as s3:
-            resp = await s3.get_object(Bucket=self.bucket, Key=key)
-            return await resp["Body"].read()
+client = AsyncClient(uri=uri, client_id="jubapi", debug=False)
+await client.put(bucket_id="jub", key=ball_id, value=data, tags={"jub_key": key})
+res  = await client.get(bucket_id="jub", key=ball_id)
+data = res.unwrap().data.tobytes()
 ```
 
----
+Notes:
+
+- `list` fetches the whole bucket's metadata, so use a dedicated bucket for Jub to keep it small.
+- Other client settings (logging, cache, SSL) can still be tuned with the MictlanX
+  `MICTLANX_CLIENT_*` / `MICTLANX_LOG_*` environment variables.
+
+## Adding another backend
+
+1. Subclass `StorageBackend`, set `namespace = "products"` and implement the five async methods.
+   Validate keys with `key_for`/`_check_key` so nothing escapes the namespace.
+2. Add a branch in `create_storage_backend` and its name to `STORAGE_BACKENDS`.
+3. Add any new settings to `jubapi/config/__init__.py`, to the table above and to
+   [Configuration](configuration.md).
 
 ## Upload flow
 
 ```
-POST /products/{id}/upload  (multipart: user_id + file)
+POST /api/v2/products/{product_id}/upload   (multipart: file, Bearer token)
          │
-         ├─ 1. Read file bytes from UploadFile
-         ├─ 2. Create TaskX (PENDING / INDEX)
-         ├─ 3. Return 202 immediately with { job_id, product_id, status: "queued" }
+         ├─ 1. Reduce the file name to its last component (safe_filename)
+         ├─ 2. Check the product exists
+         ├─ 3. Create a TaskX (operation INDEX) owned by the current user
+         ├─ 4. Return 202 immediately with { job_id, product_id }
          │
          └─ BackgroundTask:
-               ├─ storage.put(key, bytes)   ← StorageBackend.put()
+               ├─ storage.put(storage.key_for(product_id, job_id, filename), bytes)
+               ├─ Set metadata.extension on the product from the file extension
                ├─ On success: task_svc.complete_task(job_id, success=True)
                └─ On failure: task_svc.complete_task(job_id, success=False, error_msg=...)
 ```
 
-The caller can poll `GET /tasks/{job_id}` to track the background job.
+The caller can poll `GET /api/v2/tasks/{job_id}` to track the background job.
 Once the file is stored, an external indexing system reads it, processes the data,
-and calls `POST /tasks/{job_id}/complete` when finished.
+and calls `POST /api/v2/tasks/{job_id}/complete` when finished.
+
+`GET /api/v2/products/{product_id}/download` returns the latest uploaded file
+(or the one for `?job_id=`), served from the backend's read cache when possible.
+
+## Orphaned files
+
+When `JUB_ORPHAN_CHECK_ENABLED=1`, a background job runs every
+`JUB_ORPHAN_CHECK_INTERVAL_SECONDS`. It lists the product directories in storage and
+reports those whose product no longer exists in MongoDB. With
+`JUB_ORPHAN_CHECK_DELETE=1` it also deletes them; otherwise it only logs them.

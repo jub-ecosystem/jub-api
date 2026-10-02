@@ -41,6 +41,8 @@ Copyright &copy; 2026 Jub API Team
 nav = [
     { "Home" = "index.md" },
     { "Getting Started" = "getting-started.md" },
+    { "Configuration" = "configuration.md" },
+    { "Storage" = "storage.md" },
     {"Data Model" = "data-model.md" },
     {"Conceptual Model" = "conceptual-model.md" },
     {"Architecture" = "architecture.md" },

@@ -18,3 +18,8 @@ CLAUDE.md
 .claude
 .cache
 mkdocs.yml
+
+# JUB client examples: ids/credentials shared between steps
+examples/client/advanced/.state.json
+examples/client/*/.upload_registry.json
+jub_storage.md

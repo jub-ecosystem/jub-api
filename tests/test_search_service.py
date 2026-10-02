@@ -10,6 +10,8 @@ import jubapi.enums.v2 as ENUMS
 import jubapi.dto.v2 as DTO
 import random
 
+TEST_USER_ID = "test_user_id"
+
 @pytest.fixture(scope="function")
 async def services(test_db):
     """Initializes all required repositories and services."""
@@ -333,12 +335,12 @@ async def seed_database_2(services):
 async def test_search_age_range(services):
     search_service:S.SearchService = services["search"]
     query  = "jub.v1.VI(AGE = 20)"
-    result = await search_service.search(query=query)
+    result = await search_service.search(query=query, user_id=TEST_USER_ID)
     assert result.is_ok
     products = result.unwrap()
     assert len(products)== 1, "Expected at least one product for AGE = 20"
     query2 = "jub.v1.VI(AGE >= 20 AND AGE <= 30)"
-    result2 = await search_service.search(query=query2,limit=100)
+    result2 = await search_service.search(query=query2, user_id=TEST_USER_ID,limit=100)
     assert result2.is_ok
     products2:List[DTO.ProductXDTO] = result2.unwrap()
     # xs = list(map(lambda p: p.name, products2))
@@ -349,15 +351,37 @@ async def test_search_age_range(services):
 async def test_search_observatories(services):
     search_service:S.SearchService = services["search"]
     query  = "jub.v1.VS(MX.TAM).VT(>=2015).VI(SEX.MALE AND CIE10.E11.2 AND PLOT_TYPE.BAR)"
-    result = await search_service.search_observatories(query=query)
+    result = await search_service.search_observatories(query=query, user_id=TEST_USER_ID)
     assert result.is_ok
 
 @pytest.mark.asyncio
 async def test_search_products(services):
     search_service:S.SearchService = services["search"]
     query  = "jub.v1.VT(>=2000 AND <=2026).VI(PLOT_TYPE.BAR)"
-    result = await search_service.search(query=query)
+    result = await search_service.search(query=query, user_id=TEST_USER_ID)
     assert result.is_ok
+
+@pytest.mark.asyncio
+async def test_search_products_variables_come_from_own_tags(services):
+    """Each product's spatial/temporal/interest variables must come from its own tags,
+    not from the tags of other products in the same result."""
+    search_service:S.SearchService = services["search"]
+    result = await search_service.search(query="jub.v1.VT(>=2000 AND <=2026)", user_id=TEST_USER_ID, limit=50, no_cache=True)
+    assert result.is_ok
+    products:List[DTO.ProductXDTO] = result.unwrap()
+    assert len({p.spatial_variable.value for p in products}) > 1, "Seed should produce products in different places"
+    assert len({p.temporal_variable.value for p in products}) > 1, "Seed should produce products in different years"
+
+    items_collection = services["db"][CollectionNames.CATALOG_ITEMS.value]
+    for p in products:
+        own_items = await items_collection.find({"catalog_item_id": {"$in": p.tags}}).to_list(length=None)
+        own_values = {
+            catalog_type: {i["value"] for i in own_items if i.get("catalog_type") == catalog_type}
+            for catalog_type in ("SPATIAL", "TEMPORAL", "INTEREST")
+        }
+        assert p.spatial_variable.value in own_values["SPATIAL"], p.product_id
+        assert p.temporal_variable.value in own_values["TEMPORAL"], p.product_id
+        assert {v.value for v in p.interest_variable} == own_values["INTEREST"], p.product_id
 
 
 # ============================================================

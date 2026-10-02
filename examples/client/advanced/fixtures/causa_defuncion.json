@@ -1,0 +1,18 @@
+{
+  "name": "Causa de Defuncion (Top 10)",
+  "value": "CAUSA_DEFUNCION",
+  "catalog_type": "INTEREST",
+  "description": "Principales causas de muerte en Mexico segun CIE-10. Fuente: SINAVE-DGIS.",
+  "items": [
+    { "name": "Enfermedades isquemicas del corazon", "value": "ISQUEMICA_CORAZON",   "code": 1,  "value_type": "STRING", "description": "Rango CIE-10: I20-I25", "aliases": [{ "value": "I20-I25", "value_type": "STRING", "description": "Rango CIE-10" }], "children": [] },
+    { "name": "Diabetes mellitus",                   "value": "DIABETES_MELLITUS",   "code": 2,  "value_type": "STRING", "description": "Rango CIE-10: E10-E14", "aliases": [{ "value": "E10-E14", "value_type": "STRING", "description": "Rango CIE-10" }], "children": [] },
+    { "name": "Tumores malignos",                    "value": "TUMOR_MALIGNO",       "code": 3,  "value_type": "STRING", "description": "Rango CIE-10: C00-D48", "aliases": [{ "value": "C00-D48", "value_type": "STRING", "description": "Rango CIE-10" }], "children": [] },
+    { "name": "Enfermedades cerebrovasculares",      "value": "CEREBROVASCULAR",     "code": 4,  "value_type": "STRING", "description": "Rango CIE-10: I60-I69", "aliases": [{ "value": "I60-I69", "value_type": "STRING", "description": "Rango CIE-10" }], "children": [] },
+    { "name": "Neumonia e influenza",                "value": "NEUMONIA_INFLUENZA",  "code": 5,  "value_type": "STRING", "description": "Rango CIE-10: J09-J18", "aliases": [{ "value": "J09-J18", "value_type": "STRING", "description": "Rango CIE-10" }], "children": [] },
+    { "name": "Enfermedades del higado",             "value": "ENFERMEDAD_HIGADO",   "code": 6,  "value_type": "STRING", "description": "Rango CIE-10: K70-K76", "aliases": [{ "value": "K70-K76", "value_type": "STRING", "description": "Rango CIE-10" }], "children": [] },
+    { "name": "Accidentes de transito",              "value": "ACCIDENTE_TRANSITO",  "code": 7,  "value_type": "STRING", "description": "Rango CIE-10: V01-V99", "aliases": [{ "value": "V01-V99", "value_type": "STRING", "description": "Rango CIE-10" }], "children": [] },
+    { "name": "Insuficiencia renal cronica",         "value": "INSUFICIENCIA_RENAL", "code": 8,  "value_type": "STRING", "description": "Rango CIE-10: N17-N19", "aliases": [{ "value": "N17-N19", "value_type": "STRING", "description": "Rango CIE-10" }], "children": [] },
+    { "name": "Hipertension arterial sistemica",     "value": "HIPERTENSION",        "code": 9,  "value_type": "STRING", "description": "Rango CIE-10: I10-I15", "aliases": [{ "value": "I10-I15", "value_type": "STRING", "description": "Rango CIE-10" }], "children": [] },
+    { "name": "COVID-19",                            "value": "COVID_19",            "code": 10, "value_type": "STRING", "description": "Rango CIE-10: U07",     "aliases": [{ "value": "U07",     "value_type": "STRING", "description": "Rango CIE-10" }], "children": [] }
+  ]
+}

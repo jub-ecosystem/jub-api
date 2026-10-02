@@ -39,6 +39,8 @@ import jubapi.services.v2 as S
 import jubapi.enums.v2 as ENUMS
 from jubapi.db.constants import CollectionNames as CN
 
+TEST_USER_ID = "test_user_id"
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Shared services fixture
@@ -245,35 +247,35 @@ def rec_ids(result) -> Set[str]:
 @pytest.mark.asyncio
 async def test_obs_wildcard_returns_all(seed):
     """VS(*) must return every observatory that has at least one product."""
-    result = await seed["search"].search_observatories("jub.v1.VS(*)")
+    result = await seed["search"].search_observatories("jub.v1.VS(*)", user_id=TEST_USER_ID)
     assert obs_ids(result) == {"obs_A", "obs_B", "obs_C"}
 
 
 @pytest.mark.asyncio
 async def test_obs_vs_mx(seed):
     """VS(MX) → only obs_A (the only observatory with MX-tagged products)."""
-    result = await seed["search"].search_observatories("jub.v1.VS(MX)")
+    result = await seed["search"].search_observatories("jub.v1.VS(MX)", user_id=TEST_USER_ID)
     assert obs_ids(result) == {"obs_A"}
 
 
 @pytest.mark.asyncio
 async def test_obs_vs_tam(seed):
     """VS(TAM) → only obs_B."""
-    result = await seed["search"].search_observatories("jub.v1.VS(TAM)")
+    result = await seed["search"].search_observatories("jub.v1.VS(TAM)", user_id=TEST_USER_ID)
     assert obs_ids(result) == {"obs_B"}
 
 
 @pytest.mark.asyncio
 async def test_obs_vs_nl(seed):
     """VS(NL) → only obs_C."""
-    result = await seed["search"].search_observatories("jub.v1.VS(NL)")
+    result = await seed["search"].search_observatories("jub.v1.VS(NL)", user_id=TEST_USER_ID)
     assert obs_ids(result) == {"obs_C"}
 
 
 @pytest.mark.asyncio
 async def test_obs_vs_nonexistent_returns_empty(seed):
     """VS(NOWHERE) → no catalog item matches → []."""
-    result = await seed["search"].search_observatories("jub.v1.VS(NOWHERE)")
+    result = await seed["search"].search_observatories("jub.v1.VS(NOWHERE)", user_id=TEST_USER_ID)
     assert result.is_ok
     assert result.unwrap() == []
 
@@ -281,14 +283,14 @@ async def test_obs_vs_nonexistent_returns_empty(seed):
 @pytest.mark.asyncio
 async def test_obs_vt_exact_2020(seed):
     """VT(2020) → obs_A (p_A1) and obs_B (p_B1)."""
-    result = await seed["search"].search_observatories("jub.v1.VT(2020)")
+    result = await seed["search"].search_observatories("jub.v1.VT(2020)", user_id=TEST_USER_ID)
     assert obs_ids(result) == {"obs_A", "obs_B"}
 
 
 @pytest.mark.asyncio
 async def test_obs_vt_exact_2023(seed):
     """VT(2023) → only obs_C (p_C1 is the only Y2023 product)."""
-    result = await seed["search"].search_observatories("jub.v1.VT(2023)")
+    result = await seed["search"].search_observatories("jub.v1.VT(2023)", user_id=TEST_USER_ID)
     assert obs_ids(result) == {"obs_C"}
 
 
@@ -300,28 +302,28 @@ async def test_obs_vt_range(seed):
       <=2021 → items {Y2020,Y2021} → {p_A1,p_A2,p_B1}
       AND intersection → {p_A1,p_A2,p_B1} → {obs_A, obs_B}
     """
-    result = await seed["search"].search_observatories("jub.v1.VT(>=2020 AND <=2021)")
+    result = await seed["search"].search_observatories("jub.v1.VT(>=2020 AND <=2021)", user_id=TEST_USER_ID)
     assert obs_ids(result) == {"obs_A", "obs_B"}
 
 
 @pytest.mark.asyncio
 async def test_obs_vi_female(seed):
     """VI(FEMALE) → obs_A (p_A1) and obs_B (p_B1)."""
-    result = await seed["search"].search_observatories("jub.v1.VI(FEMALE)")
+    result = await seed["search"].search_observatories("jub.v1.VI(FEMALE)", user_id=TEST_USER_ID)
     assert obs_ids(result) == {"obs_A", "obs_B"}
 
 
 @pytest.mark.asyncio
 async def test_obs_vi_male(seed):
     """VI(MALE) → obs_A (p_A2), obs_B (p_B2), obs_C (p_C1)."""
-    result = await seed["search"].search_observatories("jub.v1.VI(MALE)")
+    result = await seed["search"].search_observatories("jub.v1.VI(MALE)", user_id=TEST_USER_ID)
     assert obs_ids(result) == {"obs_A", "obs_B", "obs_C"}
 
 
 @pytest.mark.asyncio
 async def test_obs_vi_or_returns_union(seed):
     """VI(FEMALE OR MALE) → every observatory (union of both sex product sets)."""
-    result = await seed["search"].search_observatories("jub.v1.VI(FEMALE OR MALE)")
+    result = await seed["search"].search_observatories("jub.v1.VI(FEMALE OR MALE)", user_id=TEST_USER_ID)
     assert obs_ids(result) == {"obs_A", "obs_B", "obs_C"}
 
 
@@ -331,7 +333,7 @@ async def test_obs_vs_vt_same_product(seed):
     VS(MX).VT(2020) — p_A1 covers both dimensions in a SINGLE product.
     Observatory-level AND: obs_A has MX and Y2020 → {obs_A}.
     """
-    result = await seed["search"].search_observatories("jub.v1.VS(MX).VT(2020)")
+    result = await seed["search"].search_observatories("jub.v1.VS(MX).VT(2020)", user_id=TEST_USER_ID)
     assert obs_ids(result) == {"obs_A"}
 
 
@@ -342,7 +344,7 @@ async def test_obs_vs_vt_different_products(seed):
     This is the key regression test for the observatory-level AND fix:
     the old product-level intersection (p_A1 ∩ p_A2 = ∅) wrongly returned [].
     """
-    result = await seed["search"].search_observatories("jub.v1.VS(MX).VT(2021)")
+    result = await seed["search"].search_observatories("jub.v1.VS(MX).VT(2021)", user_id=TEST_USER_ID)
     assert obs_ids(result) == {"obs_A"}
 
 
@@ -352,7 +354,7 @@ async def test_obs_vs_vt_no_intersection(seed):
     VS(MX).VT(2023) — obs_A has MX products, obs_C has Y2023.
     No observatory covers both → [].
     """
-    result = await seed["search"].search_observatories("jub.v1.VS(MX).VT(2023)")
+    result = await seed["search"].search_observatories("jub.v1.VS(MX).VT(2023)", user_id=TEST_USER_ID)
     assert result.is_ok
     assert result.unwrap() == []
 
@@ -360,14 +362,14 @@ async def test_obs_vs_vt_no_intersection(seed):
 @pytest.mark.asyncio
 async def test_obs_multi_clause(seed):
     """VS(MX).VT(2020).VI(FEMALE) → obs_A only (p_A1 provides MX+Y2020+FEMALE)."""
-    result = await seed["search"].search_observatories("jub.v1.VS(MX).VT(2020).VI(FEMALE)")
+    result = await seed["search"].search_observatories("jub.v1.VS(MX).VT(2020).VI(FEMALE)", user_id=TEST_USER_ID)
     assert obs_ids(result) == {"obs_A"}
 
 
 @pytest.mark.asyncio
 async def test_obs_vi_spatial_no_match(seed):
     """VS(NL).VI(FEMALE) → obs_C has NL; obs with FEMALE are obs_A and obs_B. Intersection=∅."""
-    result = await seed["search"].search_observatories("jub.v1.VS(NL).VI(FEMALE)")
+    result = await seed["search"].search_observatories("jub.v1.VS(NL).VI(FEMALE)", user_id=TEST_USER_ID)
     assert result.is_ok
     assert result.unwrap() == []
 
@@ -379,7 +381,7 @@ async def test_obs_strict_false_drops_empty_block(seed):
     dropped instead of short-circuiting.  Only VT(2020) applies → {obs_A, obs_B}.
     """
     result = await seed["search"].search_observatories(
-        "jub.v1.VS(NOWHERE).VT(2020)", strict=False
+        "jub.v1.VS(NOWHERE).VT(2020)", user_id=TEST_USER_ID, strict=False
     )
     assert obs_ids(result) == {"obs_A", "obs_B"}
 
@@ -391,56 +393,56 @@ async def test_obs_strict_false_drops_empty_block(seed):
 @pytest.mark.asyncio
 async def test_products_vs_mx(seed):
     """VS(MX) → only products tagged MX: p_A1 and p_A2."""
-    result = await seed["search"].search("jub.v1.VS(MX)", limit=10)
+    result = await seed["search"].search("jub.v1.VS(MX)", user_id=TEST_USER_ID, limit=10)
     assert prod_ids(result) == {"p_A1", "p_A2"}
 
 
 @pytest.mark.asyncio
 async def test_products_vs_tam(seed):
     """VS(TAM) → p_B1 and p_B2."""
-    result = await seed["search"].search("jub.v1.VS(TAM)", limit=10)
+    result = await seed["search"].search("jub.v1.VS(TAM)", user_id=TEST_USER_ID, limit=10)
     assert prod_ids(result) == {"p_B1", "p_B2"}
 
 
 @pytest.mark.asyncio
 async def test_products_vt_2020(seed):
     """VT(2020) → products tagged Y2020: p_A1 and p_B1."""
-    result = await seed["search"].search("jub.v1.VT(2020)", limit=10)
+    result = await seed["search"].search("jub.v1.VT(2020)", user_id=TEST_USER_ID, limit=10)
     assert prod_ids(result) == {"p_A1", "p_B1"}
 
 
 @pytest.mark.asyncio
 async def test_products_vi_female(seed):
     """VI(FEMALE) → products tagged FEMALE: p_A1 and p_B1."""
-    result = await seed["search"].search("jub.v1.VI(FEMALE)", limit=10)
+    result = await seed["search"].search("jub.v1.VI(FEMALE)", user_id=TEST_USER_ID, limit=10)
     assert prod_ids(result) == {"p_A1", "p_B1"}
 
 
 @pytest.mark.asyncio
 async def test_products_vs_and_vt_single_product(seed):
     """VS(MX).VT(2020) → only p_A1 has both tags."""
-    result = await seed["search"].search("jub.v1.VS(MX).VT(2020)", limit=10)
+    result = await seed["search"].search("jub.v1.VS(MX).VT(2020)", user_id=TEST_USER_ID, limit=10)
     assert prod_ids(result) == {"p_A1"}
 
 
 @pytest.mark.asyncio
 async def test_products_wildcard_returns_all(seed):
     """VS(*) → all 5 products."""
-    result = await seed["search"].search("jub.v1.VS(*)", limit=10)
+    result = await seed["search"].search("jub.v1.VS(*)", user_id=TEST_USER_ID, limit=10)
     assert len(result.unwrap()) == 5
 
 
 @pytest.mark.asyncio
 async def test_products_scoped_to_observatory(seed):
     """VS(MX) with observatory_id=obs_A → only obs_A products (p_A1, p_A2)."""
-    result = await seed["search"].search("jub.v1.VS(MX)", observatory_id="obs_A", limit=10)
+    result = await seed["search"].search("jub.v1.VS(MX)", user_id=TEST_USER_ID, observatory_id="obs_A", limit=10)
     assert prod_ids(result) == {"p_A1", "p_A2"}
 
 
 @pytest.mark.asyncio
 async def test_products_scoped_wrong_observatory(seed):
     """VS(MX) with observatory_id=obs_B → obs_B has no MX products → []."""
-    result = await seed["search"].search("jub.v1.VS(MX)", observatory_id="obs_B", limit=10)
+    result = await seed["search"].search("jub.v1.VS(MX)", user_id=TEST_USER_ID, observatory_id="obs_B", limit=10)
     assert result.is_ok
     assert result.unwrap() == []
 
@@ -630,3 +632,32 @@ async def test_plot_invalid_operator_returns_error(records_seed):
         "jub.v1.VO(BADOP(RATE))", chart_type="bar"
     )
     assert result.is_err, "Expected an error for an invalid VO operator"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Part C — enabled/disabled status is not cached
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.asyncio
+async def test_obs_status_change_visible_through_cache(seed):
+    """Only observatory IDs are cached: disabling/enabling shows up on the next (cached) search."""
+    search, obs_repo = seed["search"], seed["search"].observatory_repository
+    query = "jub.v1.VS(*)"
+
+    assert obs_ids(await search.search_observatories(query, user_id=TEST_USER_ID)) == {"obs_A", "obs_B", "obs_C"}
+    assert (query, True) in search._observatory_cache
+
+    await obs_repo.update("obs_A", {"is_disabled": True})
+    assert obs_ids(await search.search_observatories(query, user_id=TEST_USER_ID)) == {"obs_B", "obs_C"}
+
+    await obs_repo.update("obs_A", {"is_disabled": False})
+    assert obs_ids(await search.search_observatories(query, user_id=TEST_USER_ID)) == {"obs_A", "obs_B", "obs_C"}
+
+
+@pytest.mark.asyncio
+async def test_obs_pagination_is_sorted_by_title(seed):
+    search = seed["search"]
+    full = [o.title for o in (await search.search_observatories("jub.v1.VS(*)", user_id=TEST_USER_ID)).unwrap()]
+    assert full == sorted(full)
+    page = (await search.search_observatories("jub.v1.VS(*)", user_id=TEST_USER_ID, skip=1, limit=1)).unwrap()
+    assert [o.title for o in page] == full[1:2]

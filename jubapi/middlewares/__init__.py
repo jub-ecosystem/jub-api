@@ -6,7 +6,7 @@ import jubapi.services.v2 as S
 import jubapi.repositories.v2 as R
 import jubapi.db.constants as DC
 from jubapi.db import get_collection
-from jubapi.storage import StorageBackend, LocalStorageBackend
+from jubapi.storage import StorageBackend, create_storage_backend
 from xolo.client.client import XoloClient
 import jubapi.dto.v2 as DTO
 from jubapi.log import Log
@@ -41,32 +41,35 @@ def get_link_manager()->S.GraphLinkManager:
         observatory_service_link_repository        = R.ObservatoryToServiceLinkRepository(get_collection(DC.CollectionNames.OBSERVATORY_SERVICE_LINKS.value)),
         observatory_datasource_link_repository     = R.ObservatoryToDataSourceLinkRepository(get_collection(DC.CollectionNames.OBSERVATORY_DATASOURCE_LINKS.value)),
         product_product_link_repository            = R.ProductToProductLinkRepository(get_collection(DC.CollectionNames.PRODUCT_PRODUCT_LINKS.value)),
+        observatory_user_link_repository           = R.ObservatoryToUserLinkRepository(get_collection(DC.CollectionNames.OBSERVATORY_USER_LINKS.value)),
     )
     return graph_link_manager
 
 
+_search_service: Optional[S.SearchService] = None
 
-def get_search_service()->S.SearchService:
-    # observatories_service = get_observatories_service()
-    service = S.SearchService(
-        catalog_alias_repository                   = R.CatalogItemAliasesRepository(get_collection(DC.CollectionNames.CATALOG_ITEM_ALIASES.value)),
-        catalog_item_catalog_alias_link_repository = R.CatalogItemToCatalogAliasLinkRepository(get_collection(DC.CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value)),
-        catalog_item_relationship_repository       = R.CatalogItemRelationshipRepository(get_collection(DC.CollectionNames.CATALOG_ITEM_RELATIONSHIPS.value)),
-        catalog_item_repository                    = R.CatalogItemsRepository(get_collection(DC.CollectionNames.CATALOG_ITEMS.value)),
-        observatory_product_link_repository        = R.ObservatoryToProductLinkRepository(get_collection(DC.CollectionNames.OBSERVATORY_PRODUCT_LINKS.value)),
-        product_repository                         = R.ProductsRepository(get_collection(DC.CollectionNames.PRODUCTS.value)),
-        product_catalog_item_link_repository= R.ProductToCatalogItemLinkRepository(get_collection(DC.CollectionNames.PRODUCT_CATALOGS_ITEM_LINKS.value)),
-        observatory_catalog_link_repository= R.ObservatoryToCatalogLinkRepository(get_collection(DC.CollectionNames.OBSERVATORY_CATALOG_LINKS.value)),
-        catalog_catalog_item_link_repository= R.CatalogToCatalogItemLinkRepository(get_collection(DC.CollectionNames.CATALOG_CATALOG_ITEM_LINKS.value)),
-        observatory_repository = R.ObservatoriesRepository(get_collection(DC.CollectionNames.OBSERVATORIES.value)),
-        catalog_repository = R.CatalogsRepository(get_collection(DC.CollectionNames.CATALOGS.value)),
-        data_records_repository= R.DataRecordsRepository(get_collection(DC.CollectionNames.DATA_RECORDS.value))
-
-    )
-    service.suggestion_repository = R.ObservatorySearchSuggestionRepository(
-        get_collection(DC.CollectionNames.OBSERVATORY_SEARCH_SUGGESTIONS.value)
-    )
-    return service
+def get_search_service() -> S.SearchService:
+    global _search_service
+    if _search_service is None:
+        svc = S.SearchService(
+            observatory_product_link_repository        = R.ObservatoryToProductLinkRepository(get_collection(DC.CollectionNames.OBSERVATORY_PRODUCT_LINKS.value)),
+            product_catalog_item_link_repository       = R.ProductToCatalogItemLinkRepository(get_collection(DC.CollectionNames.PRODUCT_CATALOGS_ITEM_LINKS.value)),
+            catalog_item_relationship_repository       = R.CatalogItemRelationshipRepository(get_collection(DC.CollectionNames.CATALOG_ITEM_RELATIONSHIPS.value)),
+            catalog_item_repository                    = R.CatalogItemsRepository(get_collection(DC.CollectionNames.CATALOG_ITEMS.value)),
+            product_repository                         = R.ProductsRepository(get_collection(DC.CollectionNames.PRODUCTS.value)),
+            catalog_alias_repository                   = R.CatalogItemAliasesRepository(get_collection(DC.CollectionNames.CATALOG_ITEM_ALIASES.value)),
+            catalog_item_catalog_alias_link_repository = R.CatalogItemToCatalogAliasLinkRepository(get_collection(DC.CollectionNames.CATALOG_ITEM_CATALOG_ALIAS_LINKS.value)),
+            observatory_catalog_link_repository        = R.ObservatoryToCatalogLinkRepository(get_collection(DC.CollectionNames.OBSERVATORY_CATALOG_LINKS.value)),
+            catalog_catalog_item_link_repository       = R.CatalogToCatalogItemLinkRepository(get_collection(DC.CollectionNames.CATALOG_CATALOG_ITEM_LINKS.value)),
+            observatory_repository                     = R.ObservatoriesRepository(get_collection(DC.CollectionNames.OBSERVATORIES.value)),
+            catalog_repository                         = R.CatalogsRepository(get_collection(DC.CollectionNames.CATALOGS.value)),
+            data_records_repository                    = R.DataRecordsRepository(get_collection(DC.CollectionNames.DATA_RECORDS.value)),
+        )
+        svc.suggestion_repository = R.ObservatorySearchSuggestionRepository(
+            get_collection(DC.CollectionNames.OBSERVATORY_SEARCH_SUGGESTIONS.value)
+        )
+        _search_service = svc
+    return _search_service
 
 
 
@@ -140,6 +143,7 @@ def get_observatories_service(graph_link_manager: S.GraphLinkManager=Depends(get
         review_repository                   = review_repository,
         service_repository                  = service_repository,
         datasource_repository               = datasource_repository,
+        task_repository                     = R.TaskRepository(get_collection(DC.CollectionNames.TASKS.value)),
     )
     return service
 
@@ -273,11 +277,15 @@ def get_service_x_service(link_manager: S.GraphLinkManager = Depends(get_link_ma
     )
 
 
-# Storage backend — swap LocalStorageBackend for a cloud implementation in production
-_storage_backend: StorageBackend = LocalStorageBackend(
-    base_path  = Cfg.JUB_STORAGE_PATH,
-    max_bytes  = Cfg.JUB_STORAGE_CACHE_MAX_BYTES,
-    ttl        = Cfg.JUB_STORAGE_CACHE_TTL,
+# Storage backend — selected with JUB_STORAGE_BACKEND (FS | MEMORY | MICTLANX), see docs/storage.md
+_storage_backend: StorageBackend = create_storage_backend(
+    kind               = Cfg.JUB_STORAGE_BACKEND,
+    base_path          = Cfg.JUB_STORAGE_PATH,
+    max_bytes          = Cfg.JUB_STORAGE_CACHE_MAX_BYTES,
+    ttl                = Cfg.JUB_STORAGE_CACHE_TTL,
+    mictlanx_uri       = Cfg.JUB_MICTLANX_URI,
+    mictlanx_bucket_id = Cfg.JUB_MICTLANX_BUCKET_ID,
+    mictlanx_client_id = Cfg.JUB_MICTLANX_CLIENT_ID,
 )
 
 def get_storage_backend() -> StorageBackend:

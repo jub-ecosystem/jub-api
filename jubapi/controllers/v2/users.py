@@ -1,4 +1,4 @@
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 import jubapi.services.v2 as S
 import jubapi.middlewares as MX
 import jubapi.models.v2 as M
@@ -42,6 +42,8 @@ async def signup(
             "input": dto.model_dump(),
         })
         return result.unwrap()
+    except HTTPException:
+        raise
     except Exception as e:
         L.error({"action": "controller.users.signup", "error": str(e), "input": dto.model_dump()})
         raise EX.UnknownError(detail="Unexpected error during signup").to_http_exception()
@@ -67,6 +69,8 @@ async def login(dto: XoloDTO.AuthAttemptDTO, service: S.UsersProfileXService = D
             "input": dto.model_dump(),
         })
         return result.unwrap()
+    except HTTPException:
+        raise
     except Exception as e:
         L.error({"action": "controller.users.login", "error": str(e), "input": dto.model_dump()})
         raise EX.UnknownError(detail="Unexpected error during login").to_http_exception()

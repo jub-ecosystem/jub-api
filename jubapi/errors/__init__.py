@@ -145,3 +145,14 @@ class AuthorizationError(JubError):
             headers (Dict[str, str], optional): Additional HTTP headers. Defaults to None.
         """
         super().__init__(403, detail, headers)
+class ConflictError(JubError):
+    """Represents a conflict with the current state of the resource (HTTP 409)."""
+    def __init__(self, detail: Any = None, headers: Dict[str, str] = None) -> None:
+        """
+        Initializes the ConflictError.
+
+        Args:
+            detail (Any, optional): The error message or details. Defaults to None.
+            headers (Dict[str, str], optional): Additional HTTP headers. Defaults to None.
+        """
+        super().__init__(409, detail, headers)

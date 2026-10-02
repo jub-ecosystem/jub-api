@@ -12,7 +12,8 @@ import jubapi.middlewares as MX
 import jubapi.models.v2 as M
 import jubapi.dto.v2 as DTO
 import jubapi.enums.v2 as ENUMS
-from jubapi.storage import StorageBackend
+import jubapi.errors as EX
+from jubapi.storage import StorageBackend, InvalidStorageKey, safe_filename
 from jubapi.log.log import Log
 
 router = APIRouter(prefix="/products", tags=["products_v2"])
@@ -37,6 +38,7 @@ log = Log(name=__name__, path=os.environ.get("JUB_LOG_PATH", "/log"))
 async def create_product(
     payload: DTO.ProductCreateDTO,
     svc: S.ProductService = Depends(MX.get_product_service),
+    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
 ):
     t0 = time.monotonic()
     product_id = payload.product_id or nanoid(size=12)
@@ -65,6 +67,7 @@ async def create_product(
 async def list_products(
     limit: int = Query(100, ge=1, le=500),
     svc: S.ProductService = Depends(MX.get_product_service),
+    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
 ):
     t0 = time.monotonic()
     result = await svc.list_products(limit=limit)
@@ -90,6 +93,7 @@ async def filter_products(
     request: Request,
     limit: int = Query(100, ge=1, le=500, description="Maximum number of results to return."),
     svc: S.ProductService = Depends(MX.get_product_service),
+    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
 ):
     """
     Filter products by arbitrary metadata key-value pairs.
@@ -117,6 +121,7 @@ async def filter_products(
 async def get_product(
     product_id: str,
     svc: S.ProductService = Depends(MX.get_product_service),
+    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
 ):
     t0 = time.monotonic()
     result = await svc.get_product_by_id(product_id)
@@ -132,6 +137,7 @@ async def update_product(
     product_id: str,
     payload: DTO.ProductUpdateDTO,
     svc: S.ProductService = Depends(MX.get_product_service),
+    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
 ):
     t0 = time.monotonic()
     update_data = {k: v for k, v in payload.model_dump().items() if v is not None}
@@ -153,6 +159,7 @@ async def update_product(
 async def delete_product(
     product_id: str,
     svc: S.ProductService = Depends(MX.get_product_service),
+    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
 ):
     t0 = time.monotonic()
     result = await svc.delete_product(product_id)
@@ -171,6 +178,7 @@ async def delete_product(
 async def get_tags(
     product_id: str,
     svc: S.ProductService = Depends(MX.get_product_service),
+    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
 ):
     # Ensure product exists
     check = await svc.get_product_by_id(product_id)
@@ -188,6 +196,7 @@ async def get_tag_details(
     product_id: str,
     prod_svc: S.ProductService = Depends(MX.get_product_service),
     cat_svc:  S.CatalogService = Depends(MX.get_catalog_service),
+    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
 ):
     check = await prod_svc.get_product_by_id(product_id)
     if check.is_err:
@@ -210,6 +219,7 @@ async def add_tags(
     product_id: str,
     payload: DTO.TagProductDTO,
     svc: S.ProductService = Depends(MX.get_product_service),
+    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
 ):
     result = await svc.tag_product(product_id, payload.catalog_item_ids)
     if result.is_err:
@@ -229,6 +239,7 @@ async def bulk_tag_from_catalog(
     catalog_id: str,
     prod_svc: S.ProductService = Depends(MX.get_product_service),
     cat_svc:  S.CatalogService = Depends(MX.get_catalog_service),
+    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
 ):
     catalog_check = await cat_svc.get_catalog_details(catalog_id)
     if catalog_check.is_err:
@@ -248,6 +259,7 @@ async def remove_tag(
     product_id: str,
     catalog_item_id: str,
     svc: S.ProductService = Depends(MX.get_product_service),
+    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
 ):
     check = await svc.get_product_by_id(product_id)
     if check.is_err:
@@ -271,6 +283,7 @@ async def remove_tag(
 async def get_related_products(
     product_id: str,
     svc: S.ProductService = Depends(MX.get_product_service),
+    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
 ):
     """
     Returns all products related to the given product.
@@ -298,6 +311,7 @@ async def add_related_product(
     product_id: str,
     payload: DTO.RelateProductDTO,
     svc: S.ProductService = Depends(MX.get_product_service),
+    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
 ):
     """
     Relates two products to each other.
@@ -322,6 +336,7 @@ async def remove_related_product(
     product_id: str,
     related_product_id: str,
     svc: S.ProductService = Depends(MX.get_product_service),
+    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
 ):
     """Removes the symmetric relationship between two products."""
     result = await svc.unrelate_products(product_id, related_product_id)
@@ -378,6 +393,12 @@ async def upload_product_file(
     once it has finished indexing the stored file.
     """
     t0 = time.monotonic()
+    # The file name becomes part of the storage path: keep only its last component.
+    try:
+        filename = safe_filename(file.filename)
+    except InvalidStorageKey as e:
+        log.error({"action": "controller.product.upload", "error": str(e), "input": {"product_id": product_id}})
+        raise EX.ValidationError(detail=str(e)).to_http_exception()
     check = await prod_svc.get_product_by_id(product_id)
     if check.is_err:
         log.error({"action": "controller.product.upload", "error": str(check.unwrap_err().detail), "input": {"product_id": product_id}})
@@ -390,7 +411,7 @@ async def upload_product_file(
     task_result = await task_svc.create_task(DTO.CreateTaskDTO(
         user_id        = current_user.user_id,
         observatory_id = observatory_id,
-        title          = f"Index: {product.name} — {file.filename}",
+        title          = f"Index: {product.name} — {filename}",
         description    = f"File ingestion queued for product {product_id}.",
         operation      = ENUMS.TaskOperationEnum.INDEX,
     ))
@@ -401,9 +422,9 @@ async def upload_product_file(
     job_id = task_result.unwrap()
     data = await file.read()
     background_tasks.add_task(
-        _process_upload, product_id, job_id, file.filename, data, storage, task_svc, prod_svc
+        _process_upload, product_id, job_id, filename, data, storage, task_svc, prod_svc
     )
-    log.info({"action": "controller.product.upload", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"product_id": product_id, "filename": file.filename}, "result": {"job_id": job_id}})
+    log.info({"action": "controller.product.upload", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"product_id": product_id, "filename": filename}, "result": {"job_id": job_id}})
     return DTO.ProductUploadResponseDTO(job_id=job_id, product_id=product_id)
 
 
@@ -414,6 +435,7 @@ async def download_product_file(
     job_id:     Optional[str]      = Query(None, description="Specific upload job to download. Defaults to the latest."),
     prod_svc:   S.ProductService   = Depends(MX.get_product_service),
     storage:    StorageBackend     = Depends(MX.get_storage_backend),
+    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
 ):
     """
     Downloads a previously uploaded file for a product.
@@ -425,8 +447,12 @@ async def download_product_file(
         log.error({"action": "controller.product.download", "error": str(check.unwrap_err().detail), "input": {"product_id": product_id}})
         raise check.unwrap_err().to_http_exception()
 
-    prefix = storage.key_for(product_id, job_id) if job_id else storage.prefix_for(product_id)
-    keys   = await storage.list(prefix)
+    try:
+        prefix = storage.key_for(product_id, job_id) if job_id else storage.prefix_for(product_id)
+        keys   = await storage.list(prefix)
+    except InvalidStorageKey as e:
+        log.error({"action": "controller.product.download", "error": str(e), "input": {"product_id": product_id, "job_id": job_id}})
+        raise HTTPException(status_code=400, detail=str(e))
 
     if not keys:
         log.error({"action": "controller.product.download", "error": "No files found", "input": {"product_id": product_id, "job_id": job_id}})

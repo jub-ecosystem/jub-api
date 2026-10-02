@@ -1,73 +1,97 @@
 services:
- jub-db:
-  image: mongo:8-noble
-  ports:
-    - ${JUB_MONGODB_HOST_PORT:-27027}:27017
-  volumes:
-    - jub-db:/data/db
-    - ./db/mongod.conf:/etc/mongo/mongod.conf:ro
-  networks:
-    - jub
-  restart: unless-stopped
-  command: ["mongod", "--config","/etc/mongo/mongod.conf"]
-  
- jub:
-  build:
-    context: .
-    dockerfile: ${JUB_DOCKERFILE:-Dockerfile}
-  image: ${JUB_IMAGE_NAME:-jub:api-0.0.1a0}
-  env_file:
-    - .env.dev
-  ports:
-    - ${JUB_PORT:-6000}:${JUB_PORT:-6000}
-  networks:
-    - jub
-  volumes:
-    - jub-data:/jub
-  command: uvicorn jubapi.server:app --host ${JUB_HOST:-0.0.0.0} --port ${JUB_PORT:-6000} --reload
+  jub-db:
+    image: mongo:8-noble
+    ports:
+      - ${JUB_MONGODB_HOST_PORT:-27027}:27017
+    volumes:
+      - jub-db:/data/db
+      - ./db/mongod.conf:/etc/mongo/mongod.conf:ro
+    networks:
+      - jub
+    restart: unless-stopped
+    command: ["mongod", "--config","/etc/mongo/mongod.conf"]
 
- xolo-db:
-  image: mongo:8-noble
-  ports:
-    - ${XOLO_MONGODB_PORT:-27018}:27017
-  volumes:
-    - xolo-db:/data/db
-    - ./db/mongod.conf:/etc/mongo/mongod.conf:ro
+  jub:
+    hostname: jub
+    build:
+      context: .
+      dockerfile: ${JUB_DOCKERFILE:-Dockerfile}
+    image: ${JUB_IMAGE_NAME:-jub:api-0.0.1a0}
+    env_file:
+      - .env.dev
+    ports:
+      - ${JUB_PORT:-5000}:${JUB_PORT:-5000}
+    networks:
+      - jub
+    volumes:
+      - jub-data:/jub
+    restart: unless-stopped
+    depends_on:
+      - jub-db
+    command: uvicorn jubapi.server:app --host ${JUB_HOST:-0.0.0.0} --port ${JUB_PORT:-5000} ${JUB_RELOAD+--reload}
 
-  networks:
-    - jub
-  restart: unless-stopped
-  command: ["mongod", "--config","/etc/mongo/mongod.conf"]
-# =============================
-# XOLO Cache Service
-# =============================
- xolo-cache:
-  image: redis:7.0.11-alpine
-  ports:
-    - ${XOLO_CACHE_REDIS_PORT:-6379}:6379
-  volumes:
-    - xolo-cache-data:/data
-  networks:
-    - jub
-  restart: unless-stopped
+  xolo-db:
+    image: mongo:8-noble
+    ports:
+      - ${XOLO_MONGODB_PORT:-27018}:27017
+    volumes:
+      - xolo-db:/data/db
+      - ./db/mongod.conf:/etc/mongo/mongod.conf:ro
+    networks:
+      - jub
+    restart: unless-stopped
+    command: ["mongod", "--config","/etc/mongo/mongod.conf"]
 
-# =============================
-# XOLO API Service
-# =============================
- xolo:
-  image: nachocode/xolo:api-0.0.11a2
-  env_file:
-    - .env.dev
-  ports:
-    - ${XOLO_PORT:-10000}:${XOLO_PORT:-10000}
-  volumes:
-    - xolo-data:/xolo
-  networks:
-    - jub
-  restart: unless-stopped
-  depends_on:
-    - xolo-db
-  command: uvicorn xoloapi.server:app --host ${XOLO_HOST-0.0.0.0} --port ${XOLO_PORT-10000} ${XOLO_RELOAD+--reload} --log-level debug
+  # =============================
+  # XOLO Cache Service
+  # =============================
+  xolo-cache:
+    image: redis:7.0.11-alpine
+    ports:
+      - ${XOLO_CACHE_REDIS_PORT:-6379}:6379
+    volumes:
+      - xolo-cache-data:/data
+    networks:
+      - jub
+    restart: unless-stopped
+
+  # =============================
+  # XOLO API Service
+  # =============================
+  xolo:
+    image: nachocode/xolo:api-0.0.11a2
+    env_file:
+      - .env.dev
+    ports:
+      - ${XOLO_PORT:-10000}:${XOLO_PORT:-10000}
+    volumes:
+      - xolo-data:/xolo
+    networks:
+      - jub
+    restart: unless-stopped
+    depends_on:
+      - xolo-db
+      - xolo-cache
+    command: uvicorn xoloapi.server:app --host ${XOLO_HOST-0.0.0.0} --port ${XOLO_PORT-10000} ${XOLO_RELOAD+--reload} --log-level debug
+
+  # =============================
+  # JUB UI Service (profile: ui)
+  # =============================
+  jubui:
+    image: ${JUB_UI_IMAGE:-nachocode/jub:ui-0.1.0a5}
+    profiles: [ui]
+    env_file:
+      - .ui.env.dev
+    ports:
+      - ${JUB_UI_LOCAL_PORT:-3000}:80
+    networks:
+      - jub
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
 
 networks:
   jub:

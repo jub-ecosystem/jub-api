@@ -1,10 +1,13 @@
 from pydantic import BaseModel,Field
-from typing import Optional,List,Dict
+from jubapi.storage import SAFE_ID_PATTERN
+from typing import Optional,List,Dict,Generic,TypeVar
 import os
 import jubapi.models.v2 as M
 import jubapi.enums.v2 as ENUMS
 import datetime as DT
 # from jubapi.models.v2 import ObservatoryX,CatalogX
+
+T = TypeVar("T")
 
 
 class TasksStatsDTO(BaseModel):
@@ -96,6 +99,7 @@ class ObservatoryXDTO(BaseModel):
     image_url: Optional[str] = None
     metadata: dict = Field(default_factory=dict)
     view_count: int = Field(default=0)
+    is_disabled: bool = Field(default=False, description="Disabled observatories are hidden from search.")
     created_at: str
     updated_at: str
     @staticmethod
@@ -107,6 +111,7 @@ class ObservatoryXDTO(BaseModel):
             image_url      = model.image_url,
             metadata       = model.metadata,
             view_count     = model.view_count,
+            is_disabled    = model.is_disabled,
             created_at     = model.created_at.isoformat(),
             updated_at     = model.updated_at.isoformat()
         )
@@ -448,6 +453,15 @@ class CatalogSummaryDTO(BaseModel):
     catalog_type: ENUMS.CatalogType
 
 
+class PageDTO(BaseModel, Generic[T]):
+    """Generic paginated response envelope."""
+    items: List[T] = Field(default_factory=list, description="Items in the current page")
+    total: int = Field(description="Total number of items matching the filters (across all pages)")
+    skip: int = Field(description="Number of items skipped before this page")
+    limit: int = Field(description="Maximum number of items in a page")
+    has_more: bool = Field(description="True if there are more items after this page")
+
+
 class CatalogUpdateDTO(BaseModel):
     name: Optional[str] = Field(default=None, description="Updated catalog name")
     description: Optional[str] = Field(default=None, description="Updated description")
@@ -546,6 +560,10 @@ class ObservatoryUpdateDTO(BaseModel):
     metadata: Optional[Dict[str, str]] = Field(default=None, description="Updated metadata for the observatory as key-value pairs")
 
 
+class ObservatoryStatusUpdateDTO(BaseModel):
+    is_disabled: bool = Field(..., description="True hides the observatory from search, False publishes it.")
+
+
 class LinkCatalogDTO(BaseModel):
     catalog_id: str
     level: int = Field(default=0, ge=0, description="Priority/display order for this catalog in the observatory.")
@@ -623,7 +641,7 @@ class ObservatoryStatsBatchRequestDTO(BaseModel):
 
 class ProductCreateDTO(BaseModel):
     """Creates a single product and links it to an observatory with optional catalog-item tags."""
-    product_id: Optional[str] = Field(default=None, description="Custom string ID. A nanoid is auto-generated when omitted.")
+    product_id: Optional[str] = Field(default=None, pattern=SAFE_ID_PATTERN, description="Custom string ID (A-Z a-z 0-9 _ . -). A nanoid is auto-generated when omitted.")
     name: str = Field(..., description="Human-readable product name.")
     description: Optional[str] = Field(default="", description="Short description of what data this product contains.")
     observatory_id: str = Field(..., description="ID of the observatory this product belongs to.")
@@ -783,7 +801,6 @@ class LinkItemRelationshipDTO(BaseModel):
 class ObservatorySetupDTO(BaseModel):
     """One-shot request that creates a disabled observatory and queues a SETUP task."""
     title: str
-    user_id: str = Field(..., description="User responsible for this observatory (used for task ownership).")
     description: Optional[str] = Field(default="")
     image_url: Optional[str] = Field(default=None)
     metadata: Optional[Dict[str, str]] = Field(default_factory=dict)
@@ -821,7 +838,7 @@ class BulkCatalogsResponseDTO(BaseModel):
 
 class BulkProductItemDTO(BaseModel):
     """A single product definition inside a bulk assignment request."""
-    product_id: Optional[str] = Field(default=None, description="Custom ID; auto-generated if omitted.")
+    product_id: Optional[str] = Field(default=None, pattern=SAFE_ID_PATTERN, description="Custom ID (A-Z a-z 0-9 _ . -); auto-generated if omitted.")
     name: str
     description: Optional[str] = Field(default="")
     catalog_item_ids: List[str] = Field(default_factory=list, description="Catalog-item tags to link to this product.")

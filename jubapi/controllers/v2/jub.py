@@ -20,17 +20,17 @@ async def seed_database_from_yaml(
     file: UploadFile = File(...),
     cat_srv: S.CatalogService = Depends(MX.get_catalog_service),
     obs_srv: S.ObservatoriesService = Depends(MX.get_observatories_service),
-    prod_srv: S.ProductService = Depends(MX.get_product_service)
+    prod_srv: S.ProductService = Depends(MX.get_product_service),
+    current_user: DTO.V2.UserProfileDTO = Depends(MX.get_current_user),
 ):
     """
     Ingests a YAML file to fully seed Catalogs, Items, Aliases, Observatories, and Products.
+    The calling user becomes the owner of every observatory created.
     """
-    pass
 #     # 1. Read and parse the YAML file
     try:
         content = await file.read()
         yaml_data = yaml.safe_load(content)
-        print(yaml_data)
     except yaml.YAMLError as e:
         log.error(f"Failed to parse YAML: {e}")
         raise HTTPException(status_code=400, detail=f"Invalid YAML format: {str(e)}")
@@ -88,7 +88,7 @@ async def seed_database_from_yaml(
                 observatory_id=obs_dto.observatory_id,
                 title=obs_dto.title,
                 description=obs_dto.description
-            ))
+            ), user_id=current_user.user_id)
             
             # Link catalogs with priority based on array order
             for priority, cat_id in enumerate(obs_dto.linked_catalogs):
@@ -107,18 +107,3 @@ async def seed_database_from_yaml(
     except Exception as e:
         log.error(f"Error processing catalogs and items: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to process catalogs/items: {str(e)}")
-
-#         # ==========================================
-#         # PHASE 2: Process Observatories and Links
-#         # ==========================================
-
-#         # ==========================================
-#         # PHASE 3: Process Products
-#         # ==========================================
-
-#         return {"status": "success", "message": "Database successfully seeded from YAML."}
-
-#     except Exception as e:
-#         log.error(f"Error during YAML database seed: {e}")
-#         # Depending on your error handling, returning a 500 is standard here
-#         raise HTTPException(status_code=500, detail=f"Failed to seed database: {str(e)}")

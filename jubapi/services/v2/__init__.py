@@ -1,6 +1,7 @@
 
 import os
-import uuid 
+import re
+import uuid
 import asyncio
 import datetime as DT
 from option import Result,Ok,Err
@@ -16,7 +17,7 @@ from jubapi.querylang.v2.parser  import QueryAST,Condition,ConditionOperators,Co
 from jubapi.querylang.v2.translator import ASTToMongoTranslator
 from jubapi.querylang.v2.service_parser import ServiceQuery
 from jubapi.log.log import Log
-from jubapi.storage import StorageBackend
+from jubapi.storage import StorageBackend, is_safe_id
 from cachetools import TTLCache
 import jubapi.errors as EX
 from jubapi.db.constants import CollectionNames
@@ -106,6 +107,7 @@ class GraphLinkManager:
         observatory_service_link_repository: R.ObservatoryToServiceLinkRepository,
         observatory_datasource_link_repository: R.ObservatoryToDataSourceLinkRepository,
         product_product_link_repository: R.ProductToProductLinkRepository,
+        observatory_user_link_repository: Optional[R.ObservatoryToUserLinkRepository] = None,
     ):
         self.observatory_product_link_repository        = observatory_product_link_repository
         self.observatory_catalog_link_repository        = observatory_catalog_link_repository
@@ -116,8 +118,29 @@ class GraphLinkManager:
         self.observatory_service_link_repository        = observatory_service_link_repository
         self.observatory_datasource_link_repository     = observatory_datasource_link_repository
         self.product_product_link_repository            = product_product_link_repository
+        self.observatory_user_link_repository          = observatory_user_link_repository
 
+    async def get_observatory_ids_linked_to_user(self, user_id: str) -> Result[List[str], EX.JubError]:
+        if not self.observatory_user_link_repository:
+            return Err(EX.JubError("Observatory-user link repository not configured"))
+        try:
+            observatory_ids = await self.observatory_user_link_repository.get_observatories_by_user_id(user_id)
+            return Ok(observatory_ids)
+        except Exception as e:
+            L.error(f"Error getting observatory IDs linked to user {user_id}: {e}")
+            return Err(EX.JubError.from_exception(e))
 
+    async def user_has_observatory_role(self, observatory_id: str, user_id: str, roles: Optional[List[ENUMS.ObservatoryUserRoleEnum]] = None) -> Result[bool, EX.JubError]:
+        """Ok(True) if the user is linked to the observatory (holding one of `roles`, when given)."""
+        if not self.observatory_user_link_repository:
+            return Err(EX.JubError("Observatory-user link repository not configured"))
+        try:
+            return Ok(await self.observatory_user_link_repository.has_role(observatory_id, user_id, roles))
+        except Exception as e:
+            L.error(f"Error checking role of user {user_id} on observatory {observatory_id}: {e}")
+            return Err(EX.JubError.from_exception(e))
+
+    #
     async def get_alias_links_by_item_ids(self, item_ids: List[str]) -> Result[List[M.CatalogItemToCatalogAliasLink], EX.JubError]:
         try:
             cursor = self.catalog_item_catalog_alias_link_repository.collection.find(
@@ -277,6 +300,20 @@ class GraphLinkManager:
             return Err(EX.JubError.from_exception(e))
     # _______________________
 
+    async def link_observatory_to_user(self, observatory_id: str, user_id: str, role: ENUMS.ObservatoryUserRoleEnum) -> Result[UpdateResult, EX.JubError]:
+        if not self.observatory_user_link_repository:
+            return Err(EX.JubError("Observatory-user link repository not configured"))
+        try:
+            link = M.ObservatoryToUserLink(observatory_id=observatory_id, user_id=user_id, role=role)
+            r = await self.observatory_user_link_repository.collection.update_one(
+                {"observatory_id": observatory_id, "user_id": user_id},
+                {"$set": link.model_dump()},
+                upsert=True
+            )
+            return Ok(r)
+        except Exception as e:
+            L.error(f"Error linking observatory to user: {e}")
+            return Err(EX.JubError.from_exception(e))
 
     async def link_observatory_to_product(self, observatory_id: str, product_id: str)->Result[UpdateResult,EX.JubError]:
         try:
@@ -509,6 +546,8 @@ class GraphLinkManager:
             await self.observatory_product_link_repository.collection.delete_many({"observatory_id": observatory_id})
             await self.observatory_service_link_repository.collection.delete_many({"observatory_id": observatory_id})
             await self.observatory_datasource_link_repository.collection.delete_many({"observatory_id": observatory_id})
+            if self.observatory_user_link_repository:
+                await self.observatory_user_link_repository.collection.delete_many({"observatory_id": observatory_id})
             return Ok(True)
         except Exception as e:
             L.error(f"Error removing all observatory links for {observatory_id}: {e}")
@@ -614,6 +653,7 @@ class ObservatoriesService:
         review_repository: R.ReviewRepository,
         service_repository: R.ServiceRepository,
         datasource_repository: R.DataSourceRepository,
+        task_repository: Optional[R.TaskRepository] = None,
     ):
         self.observatory_repository = observatory_repository
         self.observatory_product_link_repository = observatory_product_link_repository
@@ -622,16 +662,34 @@ class ObservatoriesService:
         self.review_repository = review_repository
         self.service_repository = service_repository
         self.datasource_repository = datasource_repository
+        self.task_repository = task_repository
 
     # --- Create ---
 
-    async def create_observatory(self, observatory: M.ObservatoryX) -> Result[str, EX.JubError]:
+    async def create_observatory(self, observatory: M.ObservatoryX,user_id:Optional[str] = None) -> Result[str, EX.JubError]:
         exists = await self.observatory_repository.get_by_id(observatory.observatory_id)
         if exists.is_ok:
             return Err(EX.AlreadyExists(f"Observatory '{observatory.observatory_id}' already exists."))
-        return await self.observatory_repository.insert(observatory)
+        insert_result = await self.observatory_repository.insert(observatory)
+        if insert_result.is_err:
+            return insert_result
+        # Link the observatory to its owner only once it actually exists
+        if user_id:
+            result = await self.graph_link_manager.link_observatory_to_user(observatory.observatory_id, user_id, ENUMS.ObservatoryUserRoleEnum.OWNER)
+            if result.is_err:
+                L.warning(f"Failed to link observatory to user: {result.unwrap_err()}")
+        return insert_result
 
     # --- Read ---
+
+    async def get_observatories_by_user(self, user_id: str, page_index: int = 0, limit: int = 10) -> Result[List[DTO.ObservatoryXDTO], EX.JubError]:
+        ids_result = await self.graph_link_manager.get_observatory_ids_linked_to_user(user_id)
+        if ids_result.is_err:
+            return Err(ids_result.unwrap_err())
+        ids = ids_result.unwrap()
+        if not ids:
+            return Ok([])
+        return await self.get_observatories(query={"observatory_id": {"$in": ids}}, page_index=page_index, limit=limit)
 
     async def get_observatories(self, query: Dict[str, Any] = {}, page_index: int = 0, limit: int = 10) -> Result[List[DTO.ObservatoryXDTO], EX.JubError]:
         try:
@@ -681,6 +739,7 @@ class ObservatoriesService:
             image_url      = base.image_url,
             metadata       = base.metadata,
             view_count     = base.view_count,
+            is_disabled    = base.is_disabled,
             created_at     = base.created_at,
             updated_at     = base.updated_at,
             services       = services,
@@ -927,10 +986,56 @@ class ObservatoriesService:
 
     async def enable_observatory(self, observatory_id: str) -> Result[bool, EX.JubError]:
         """Flips is_disabled to False — called once the setup task completes successfully."""
-        result = await self.observatory_repository.update(observatory_id, {"is_disabled": False})
+        result = await self._set_is_disabled(observatory_id, False)
         if result.is_err:
             return Err(result.unwrap_err())
         return Ok(True)
+
+    async def ensure_observatory_role(self, observatory_id: str, user_id: str, roles: Optional[List[ENUMS.ObservatoryUserRoleEnum]] = None) -> Result[M.ObservatoryX, EX.JubError]:
+        """
+        Returns the observatory if the user is linked to it (holding one of `roles`, when given).
+        NotFound if the observatory does not exist, AuthorizationError if the user is not allowed.
+        """
+        obs_result = await self.observatory_repository.get_by_id(observatory_id)
+        if obs_result.is_err:
+            return Err(EX.NotFound(f"Observatory '{observatory_id}' not found."))
+        role_result = await self.graph_link_manager.user_has_observatory_role(observatory_id, user_id, roles)
+        if role_result.is_err:
+            return Err(role_result.unwrap_err())
+        if not role_result.unwrap():
+            return Err(EX.AuthorizationError(f"You are not allowed to manage observatory '{observatory_id}'."))
+        return obs_result
+
+    async def set_observatory_status(self, observatory_id: str, user_id: str, is_disabled: bool) -> Result[DTO.ObservatoryXDTO, EX.JubError]:
+        """Enables or disables an observatory. Only its owner can do it, and only once its setup task succeeded."""
+        obs_result = await self.ensure_observatory_role(observatory_id, user_id, [ENUMS.ObservatoryUserRoleEnum.OWNER])
+        if obs_result.is_err:
+            return Err(obs_result.unwrap_err())
+
+        # Observatories without a setup task (created enabled, or seeded) are ready by definition.
+        if self.task_repository:
+            setup_task = await self.task_repository.collection.find_one(
+                {"observatory_id": observatory_id, "operation": ENUMS.TaskOperationEnum.SETUP.value},
+                sort=[("created_at", -1)],
+            )
+            if setup_task and setup_task.get("current_status") != ENUMS.TaskStatusEnum.SUCCESS.value:
+                return Err(EX.ConflictError(f"Observatory '{observatory_id}' setup is not completed yet."))
+
+        update_result = await self._set_is_disabled(observatory_id, is_disabled, current=obs_result.unwrap())
+        if update_result.is_err:
+            return Err(update_result.unwrap_err())
+        return Ok(DTO.ObservatoryXDTO.from_model(update_result.unwrap()))
+
+    async def _set_is_disabled(self, observatory_id: str, is_disabled: bool, current: Optional[M.ObservatoryX] = None) -> Result[M.ObservatoryX, EX.JubError]:
+        """Writes is_disabled only when it changes, so a no-op is not reported as NotFound by the repository."""
+        if current is None:
+            obs_result = await self.observatory_repository.get_by_id(observatory_id)
+            if obs_result.is_err:
+                return Err(EX.NotFound(f"Observatory '{observatory_id}' not found."))
+            current = obs_result.unwrap()
+        if current.is_disabled == is_disabled:
+            return Ok(current)
+        return await self.observatory_repository.update(observatory_id, {"is_disabled": is_disabled, "updated_at": DT.datetime.now(DT.timezone.utc)})
 
     async def delete_observatory(self, observatory_id: str) -> Result[bool, EX.JubError]:
         """Deletes the observatory and all its catalog/product links."""
@@ -939,6 +1044,31 @@ class ObservatoriesService:
             return Err(EX.NotFound(f"Observatory '{observatory_id}' not found."))
         await self.graph_link_manager.remove_all_observatory_links(observatory_id)
         return await self.observatory_repository.delete(observatory_id)
+
+    # 
+    async def get_observatory_by_user_id(self, user_id: str) -> Result[List[DTO.ObservatoryXDTO], EX.JubError]:
+        try:
+            result = await self.graph_link_manager.get_observatory_ids_linked_to_user(user_id)
+            if result.is_err:
+                L.error(f"Error fetching observatory IDs linked to user {user_id}: {result.unwrap_err()}")
+                return Err(result.unwrap_err())
+            observatory_ids = result.unwrap()
+            if not observatory_ids:
+                L.warning(f"No observatory linked to user '{user_id}' found.")
+                return Ok([])
+            # get all the observatories by id usiong parallel calls
+            observatory_results = await asyncio.gather(*[self.get_observatory(oid) for oid in observatory_ids])
+            observatories:List[DTO.ObservatoryXDTO] = []
+            for res in observatory_results:
+                if res.is_ok:
+                    observatories.append(res.unwrap())
+                else:
+                    L.error(f"Error fetching observatory details: {res.unwrap_err()}")
+            return Ok(observatories)
+
+        except Exception as e:
+            L.error(f"Error fetching observatory for user {user_id}: {e}")
+            return Err(EX.JubError.from_exception(e))
 
 class CatalogService:
     def __init__(
@@ -1047,21 +1177,47 @@ class CatalogService:
                 catalog_type=catalog_type
             )
 
-    async def list_catalogs(self) -> Result[List[DTO.CatalogSummaryDTO], EX.JubError]:
-        """Returns a lightweight list of all catalogs."""
+    async def list_catalogs(
+        self,
+        catalog_types: Optional[List[ENUMS.CatalogType]] = None,
+        q: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> Result[DTO.PageDTO[DTO.CatalogSummaryDTO], EX.JubError]:
+        """Returns a page of lightweight catalogs, optionally filtered by type and by a name/value search."""
         try:
-            catalogs_result = await self.catalog_repository.find({})
+            query: Dict[str, Any] = {}
+            if catalog_types:
+                query["catalog_type"] = {"$in": [t.value for t in catalog_types]}
+            if q and q.strip():
+                pattern = {"$regex": re.escape(q.strip()), "$options": "i"}
+                query["$or"] = [{"name": pattern}, {"value": pattern}]
+
+            # Sort by name, then catalog_id as tie-breaker so pages never overlap or skip items.
+            count_result, catalogs_result = await asyncio.gather(
+                self.catalog_repository.count(query),
+                self.catalog_repository.find(query, skip=skip, limit=limit, sort=[("name", 1), ("catalog_id", 1)]),
+            )
+            if count_result.is_err:
+                return Err(count_result.unwrap_err())
             if catalogs_result.is_err:
                 L.error(f"Error fetching catalogs: {catalogs_result.unwrap_err()}")
-                return Err(EX.JubError(f"Error fetching catalogs: {catalogs_result.unwrap_err()}"))
-            catalogs = catalogs_result.unwrap()
-            dtos = [
+                return Err(catalogs_result.unwrap_err())
+
+            total = count_result.unwrap()
+            items = [
                 DTO.CatalogSummaryDTO(
-                    catalog_id=c.catalog_id, name=c.name, 
+                    catalog_id=c.catalog_id, name=c.name,
                     value=c.value, catalog_type=c.catalog_type
-                ) for c in catalogs
+                ) for c in catalogs_result.unwrap()
             ]
-            return Ok(dtos)
+            return Ok(DTO.PageDTO[DTO.CatalogSummaryDTO](
+                items    = items,
+                total    = total,
+                skip     = skip,
+                limit    = limit,
+                has_more = skip + len(items) < total,
+            ))
         except Exception as e:
             return Err(EX.UnknownError(detail=str(e), status_code=500))
 
@@ -1444,7 +1600,12 @@ class ProductService:
         catalog_item_ids: List[str] = None
     ) -> Result[str, EX.JubError]:
         """Inserts a dataset, assigns it to an observatory, and applies all its tags."""
-        
+        # The id is a path segment in file storage: reject '..', '/', etc.
+        if not is_safe_id(product.product_id):
+            return Err(EX.ValidationError(
+                f"Invalid product_id {product.product_id!r}: use 1-128 characters from A-Z a-z 0-9 _ . - not starting with '.'."
+            ))
+
         # 1. Save the product
         prod_res = await self.product_repository.insert(product)
         if prod_res.is_err:
@@ -1603,6 +1764,8 @@ class ProductService:
 
 
 class SearchService:
+
+    
     def __init__(
         self, 
         observatory_product_link_repository:R.ObservatoryToProductLinkRepository,
@@ -1618,18 +1781,18 @@ class SearchService:
         catalog_repository: R.CatalogsRepository,
         data_records_repository: R.DataRecordsRepository
     ):
-        self.observatory_product_link_repository  = observatory_product_link_repository
-        self.product_catalog_item_link_repository = product_catalog_item_link_repository
-        self.catalog_item_relationship_repository = catalog_item_relationship_repository
-        self.catalog_item_repository              = catalog_item_repository
-        self.product_repository                   = product_repository
-        self.catalog_alias_repository             = catalog_alias_repository
+        self.observatory_product_link_repository        = observatory_product_link_repository
+        self.product_catalog_item_link_repository       = product_catalog_item_link_repository
+        self.catalog_item_relationship_repository       = catalog_item_relationship_repository
+        self.catalog_item_repository                    = catalog_item_repository
+        self.product_repository                         = product_repository
+        self.catalog_alias_repository                   = catalog_alias_repository
         self.catalog_item_catalog_alias_link_repository = catalog_item_catalog_alias_link_repository
-        self.observatory_catalog_link_repository = observatory_catalog_link_repository
-        self.catalog_catalog_item_link_repository = catalog_catalog_item_link_repository
-        self.observatory_repository              = observatory_repository
-        self.catalog_repository                  = catalog_repository
-        self.data_records_repository             = data_records_repository
+        self.observatory_catalog_link_repository        = observatory_catalog_link_repository
+        self.catalog_catalog_item_link_repository       = catalog_catalog_item_link_repository
+        self.observatory_repository                     = observatory_repository
+        self.catalog_repository                         = catalog_repository
+        self.data_records_repository                    = data_records_repository
         self.suggestion_repository: Optional[R.ObservatorySearchSuggestionRepository] = None
         self._product_cache     = TTLCache(maxsize=512, ttl=JUB_SEARCH_PRODUCT_CACHE_TTL)
         self._observatory_cache = TTLCache(maxsize=256, ttl=JUB_SEARCH_OBSERVATORY_CACHE_TTL)
@@ -1686,137 +1849,44 @@ class SearchService:
                 result = result & s
             return result
 
-    async def search_observatories(self, query: str, strict: bool = True, skip: int = 0, limit: int = 100, no_cache: bool = False) -> Result[List[DTO.ObservatoryXDTO], EX.JubError]:
+    async def search_observatories(self, query: str, user_id: str, strict: bool = True, skip: int = 0, limit: int = 100, no_cache: bool = False) -> Result[List[DTO.ObservatoryXDTO], EX.JubError]:
         """
         Finds observatories by walking: DSL condition → catalog items (+ aliases)
-        → products → observatories. Only observatories with at least one matching
-        product are returned.
+        → products → observatories. Only enabled observatories with at least one matching
+        product are returned, sorted by title.
+
+        Only the resolved observatory IDs are cached (the expensive part). The enabled/disabled
+        filter and pagination run on every call, so a status change is visible right away in
+        every worker without invalidating the cache.
         """
-        cache_key = (query, strict, skip, limit)
-        if not no_cache and cache_key in self._observatory_cache:
-            return Ok(self._observatory_cache[cache_key])
-
+        cache_key = (query, strict)
         try:
-            ast = QueryAST.parse(query)
-            L.debug(f"Parsed AST: {ast}")
-
-            mongo_op_map = {">": "$gt", ">=": "$gte", "<": "$lt", "<=": "$lte", "=": "$eq"}
-
-            # One entry per VS/VT/VI block. None = wildcard (no filter).
-            # Blocks are AND-ed together; conditions within a block follow the group logic (OR/AND).
-            per_block_product_sets: List[Optional[set]] = []
-
-            for catalog_query in ast.queries:
-                # Resolve each condition in the group to a product set (or None for wildcard)
-                condition_product_sets: List[Optional[set]] = []
-
-                for condition in catalog_query.group.conditions:
-                    L.debug({
-                        "message": "Processing condition",
-                        "catalog_value": condition.catalog_value,
-                        "operator": condition.operator,
-                        "item_path": condition.item_path,
-                    })
-
-                    # Pure wildcard (VS(*), VT(*), VI(*), VI(CAT.*)) → no filter for this condition
-                    if condition.operator == "WILDCARD" and not condition.item_path:
-                        condition_product_sets.append(None)
-                        continue
-
-                    item_ids: set = set()
-
-                    if condition.catalog_value == "TEMPORAL":
-                        mongo_op = mongo_op_map.get(condition.operator, "$eq")
-                        target_date = condition.item_path[-1] if isinstance(condition.item_path, list) else condition.item_path
-                        items = await self.catalog_item_repository.find_by_temporal_operator(
-                            mongo_op=mongo_op, target_date=target_date
-                        )
-                        item_ids = {item.catalog_item_id for item in items}
-                    else:
-                        leaf_value = (
-                            condition.item_path[-1]
-                            if isinstance(condition.item_path, list) and condition.item_path
-                            else condition.item_path or condition.catalog_value
-                        )
-                        item_ids = await self.__resolve_item_ids_for_value(leaf_value)
-
-                    L.debug(f"Condition matched {len(item_ids)} item(s)")
-
-                    if not item_ids:
-                        condition_product_sets.append(set())
-                        continue
-
-                    product_ids = await self.__product_ids_for_item_ids(item_ids)
-                    L.debug(f"Condition {condition} → {len(product_ids)} product(s)")
-                    condition_product_sets.append(product_ids)
-
-                # Combine condition results according to group logic
-                block_result = self.__combine_product_sets(condition_product_sets, catalog_query.group.logic)
-                L.debug(f"Block {catalog_query.catalog_prefix} ({catalog_query.group.logic}) → {len(block_result) if block_result is not None else 'wildcard'}")
-                per_block_product_sets.append(block_result)
-
-            if not per_block_product_sets:
+            obs_ids = None if no_cache else self._observatory_cache.get(cache_key)
+            computed = obs_ids is None
+            if computed:
+                obs_ids = await self.__resolve_observatory_ids(query, strict)
                 if not no_cache:
-                    self._observatory_cache[cache_key] = []
-                return Ok([])
-
-            if strict:
-                # Short-circuit: any block with an empty (not None) set means no results
-                if any(s is not None and len(s) == 0 for s in per_block_product_sets):
-                    if not no_cache:
-                        self._observatory_cache[cache_key] = []
-                    return Ok([])
+                    self._observatory_cache[cache_key] = obs_ids
+                    L.info({
+                        "action": "observatory_search_cache_store",
+                        "cache_key": cache_key,
+                        "result_count": len(obs_ids),
+                    })
             else:
-                # Lenient: drop blocks that resolved to nothing, keep wildcards and non-empty sets
-                per_block_product_sets = [s for s in per_block_product_sets if s is None or len(s) > 0]
-
-            specific_sets = [s for s in per_block_product_sets if s is not None]
-
-            if not specific_sets:
-                # All blocks were wildcards → any observatory with at least one product
-                obs_ids = await self.observatory_product_link_repository.get_all_observatory_ids_with_products()
-            else:
-                # Convert each per-block product set to an observatory set, then intersect at
-                # the observatory level. This allows an observatory to satisfy VS(MX) via one
-                # product and VT(2015) via a different product — both correct.
-                per_block_obs_sets: List[Set[str]] = []
-                for product_set in specific_sets:
-                    block_obs: Set[str] = set()
-                    for product_id in product_set:
-                        ids = await self.observatory_product_link_repository.get_observatory_ids_by_product_id(product_id)
-                        block_obs.update(ids)
-                    per_block_obs_sets.append(block_obs)
-
-                obs_ids: Set[str] = per_block_obs_sets[0]
-                for s in per_block_obs_sets[1:]:
-                    obs_ids = obs_ids & s
-                    if not obs_ids:
-                        if not no_cache:
-                            self._observatory_cache[cache_key] = []
-                        return Ok([])
+                L.info({
+                    "message": "Observatory search cache hit",
+                    "cache_key": cache_key,
+                })
 
             if not obs_ids:
-                if not no_cache:
-                    self._observatory_cache[cache_key] = []
                 return Ok([])
 
-            observatory_tasks = [self.observatory_repository.get_by_id(obs_id) for obs_id in obs_ids]
-            # observatory_tasks = [self.observatory_repository.find({"observatory_id": obs_id,"is_disabled":False}) for obs_id in obs_ids]
-            # print(observatory_tasks)
-            raw_observatories = await asyncio.gather(*observatory_tasks)
-            # dtos = [DTO.ObservatoryXDTO.from_model(obs.unwrap()) for obs in raw_observatories if obs.is_ok]
-            dtos = []
-            for obs in raw_observatories:
-                if obs.is_ok:
-                    model = obs.unwrap()
-                    if not model.is_disabled:
-                        dtos.append(DTO.ObservatoryXDTO.from_model(model))
-                else:
-                    L.warning(f"Failed to fetch observatory details for one of the results: {obs.unwrap_err()}")
-            result = dtos[skip: skip + limit]
-            if not no_cache:
-                self._observatory_cache[cache_key] = result
-            if result and self.suggestion_repository:
+            cursor = self.observatory_repository.collection.find(
+                {"observatory_id": {"$in": list(obs_ids)}, "is_disabled": {"$ne": True}}
+            ).sort("title", 1).skip(skip).limit(limit)
+            result = [DTO.ObservatoryXDTO.from_model(M.ObservatoryX.from_doc(doc)) for doc in await cursor.to_list(length=None)]
+
+            if computed and result and self.suggestion_repository:
                 asyncio.create_task(
                     self.suggestion_repository.record_hit("__observatories__", query)
                 )
@@ -1824,6 +1894,101 @@ class SearchService:
         except Exception as e:
             L.error({"message": "Error during observatory search", "error": str(e), "query": query})
             return Err(EX.JubError.from_exception(e))
+
+    async def __resolve_observatory_ids(self, query: str, strict: bool) -> frozenset:
+        """Resolves a DSL query to the IDs of every observatory (enabled or not) with a matching product."""
+        ast = QueryAST.parse(query)
+
+        mongo_op_map = {">": "$gt", ">=": "$gte", "<": "$lt", "<=": "$lte", "=": "$eq"}
+
+        # One entry per VS/VT/VI block. None = wildcard (no filter).
+        # Blocks are AND-ed together; conditions within a block follow the group logic (OR/AND).
+        per_block_product_sets: List[Optional[set]] = []
+
+        for catalog_query in ast.queries:
+            # Resolve each condition in the group to a product set (or None for wildcard)
+            condition_product_sets: List[Optional[set]] = []
+
+            for condition in catalog_query.group.conditions:
+                L.debug({
+                    "message": "Processing condition",
+                    "catalog_value": condition.catalog_value,
+                    "operator": condition.operator,
+                    "item_path": condition.item_path,
+                })
+
+                # Pure wildcard (VS(*), VT(*), VI(*), VI(CAT.*)) → no filter for this condition
+                if condition.operator == "WILDCARD" and not condition.item_path:
+                    condition_product_sets.append(None)
+                    continue
+
+                item_ids: set = set()
+
+                if condition.catalog_value == "TEMPORAL":
+                    mongo_op = mongo_op_map.get(condition.operator, "$eq")
+                    target_date = condition.item_path[-1] if isinstance(condition.item_path, list) else condition.item_path
+                    items = await self.catalog_item_repository.find_by_temporal_operator(
+                        mongo_op=mongo_op, target_date=target_date
+                    )
+                    item_ids = {item.catalog_item_id for item in items}
+                else:
+                    leaf_value = (
+                        condition.item_path[-1]
+                        if isinstance(condition.item_path, list) and condition.item_path
+                        else condition.item_path or condition.catalog_value
+                    )
+                    item_ids = await self.__resolve_item_ids_for_value(leaf_value)
+
+                L.debug(f"Condition matched {len(item_ids)} item(s)")
+
+                if not item_ids:
+                    condition_product_sets.append(set())
+                    continue
+
+                product_ids = await self.__product_ids_for_item_ids(item_ids)
+                L.debug(f"Condition {condition} → {len(product_ids)} product(s)")
+                condition_product_sets.append(product_ids)
+
+            # Combine condition results according to group logic
+            block_result = self.__combine_product_sets(condition_product_sets, catalog_query.group.logic)
+            L.debug(f"Block {catalog_query.catalog_prefix} ({catalog_query.group.logic}) → {len(block_result) if block_result is not None else 'wildcard'}")
+            per_block_product_sets.append(block_result)
+
+        if not per_block_product_sets:
+            return frozenset()
+
+        if strict:
+            # Short-circuit: any block with an empty (not None) set means no results
+            if any(s is not None and len(s) == 0 for s in per_block_product_sets):
+                return frozenset()
+        else:
+            # Lenient: drop blocks that resolved to nothing, keep wildcards and non-empty sets
+            per_block_product_sets = [s for s in per_block_product_sets if s is None or len(s) > 0]
+
+        specific_sets = [s for s in per_block_product_sets if s is not None]
+
+        if not specific_sets:
+            # All blocks were wildcards → any observatory with at least one product
+            obs_ids = await self.observatory_product_link_repository.get_all_observatory_ids_with_products()
+        else:
+            # Convert each per-block product set to an observatory set, then intersect at
+            # the observatory level. This allows an observatory to satisfy VS(MX) via one
+            # product and VT(2015) via a different product — both correct.
+            per_block_obs_sets: List[Set[str]] = []
+            for product_set in specific_sets:
+                block_obs: Set[str] = set()
+                for product_id in product_set:
+                    ids = await self.observatory_product_link_repository.get_observatory_ids_by_product_id(product_id)
+                    block_obs.update(ids)
+                per_block_obs_sets.append(block_obs)
+
+            obs_ids: Set[str] = per_block_obs_sets[0]
+            for s in per_block_obs_sets[1:]:
+                obs_ids = obs_ids & s
+                if not obs_ids:
+                    return frozenset()
+
+        return frozenset(obs_ids)
 
 
     async def generate_plot(self, query_str: str, source_id: Optional[str] = None, chart_type: str = "bar", strict: bool = True, **_):
@@ -2015,12 +2180,12 @@ class SearchService:
     
     
     
-    async def search(self, query: str, observatory_id: Optional[str] = None, skip: int = 0, limit: int = 10, no_cache: bool = False) -> Result[List[DTO.ProductXDTO], EX.JubError]:
+    async def search(self, query: str, user_id: str, observatory_id: Optional[str] = None, skip: int = 0, limit: int = 10, no_cache: bool = False) -> Result[List[DTO.ProductXDTO], EX.JubError]:
         """
         Takes raw ProductX models, resolves their graph relationships to get
         catalog item names, and returns fully hydrated ProductXDTOs.
         """
-        cache_key = (query, observatory_id, skip, limit)
+        cache_key = (user_id, query, observatory_id, skip, limit)
         if not no_cache and cache_key in self._product_cache:
             return Ok(self._product_cache[cache_key])
 
@@ -2059,21 +2224,22 @@ class SearchService:
             {"catalog_item_id": {"$in": list(unique_item_ids)}}
         ).to_list(length=None)
 
-        # 5. Build lookup and metadata maps
+        # 5. Build lookup maps: item_id -> name, item_id -> (catalog_type, metadata)
         item_lookup: Dict[str, str] = {}
-        item_metadata: Dict[str, List[DTO.VariableMetadataDTO]] = {}
+        item_variable: Dict[str, Tuple[str, DTO.VariableMetadataDTO]] = {}
         for doc in item_docs:
             item_model = M.CatalogItemX(**doc)
             item_lookup[item_model.catalog_item_id] = item_model.name
             if item_model.catalog_type is None:
                 continue
-            item_metadata.setdefault(item_model.catalog_type.value, []).append(
+            item_variable[item_model.catalog_item_id] = (
+                item_model.catalog_type.value,
                 DTO.VariableMetadataDTO(
                     code=item_model.code,
                     name=item_model.name,
                     value=item_model.value,
                     description=item_model.description,
-                )
+                ),
             )
 
         # 6. Batch-fetch observatory memberships for all returned products
@@ -2106,6 +2272,12 @@ class SearchService:
             dto.tags = p_item_ids
             dto.attributes = human_readable_attributes
             dto.observatory_ids = product_to_obs_ids.get(p.product_id, [])
+            # Variables come only from this product's own tags
+            item_metadata: Dict[str, List[DTO.VariableMetadataDTO]] = {}
+            for i_id in p_item_ids:
+                if i_id in item_variable:
+                    catalog_type, metadata = item_variable[i_id]
+                    item_metadata.setdefault(catalog_type, []).append(metadata)
             default_spatial_var =   item_metadata.get("SPATIAL", [])
             dto.spatial_variable =  default_spatial_var[0] if default_spatial_var else DTO.VariableMetadataDTO()
             default_temporal_var =   item_metadata.get("TEMPORAL", [])
@@ -2776,7 +2948,7 @@ class UsersProfileXService:
             )
             if res.is_err:
                 L.error(f"Login failed for {dto.username}: {res.unwrap_err()}")
-                return Err(EX.AuthorizationError(f"Login failed: {res.unwrap_err()}"))
+                return Err(EX.InvalidCredentialsError(f"Login failed: {res.unwrap_err()}"))
             L.info({
                 "event": "USER_LOGIN",
                 "message": f"User {dto.username} logged in successfully."
@@ -2838,7 +3010,7 @@ class UsersProfileXService:
             )
             if res.is_err:
                 L.error(f"Signup failed for {dto.email}: {res.unwrap_err()}")
-                return Err(EX.JubError(f"Signup failed: {res.unwrap_err()}"))
+                return Err(EX.CreationError(f"Signup failed: {res.unwrap_err()}"))
             result = res.unwrap()
             user_id = result.key
             default_profile  = M.UserProfileX(
@@ -2853,7 +3025,7 @@ class UsersProfileXService:
             result = await self.user_profile_repository.insert(default_profile)
             if result.is_err:
                 L.error(f"Failed to create default profile for {dto.email}: {result.unwrap_err()}")
-                return Err(EX.JubError(f"Failed to create default profile: {result.unwrap_err()}"))
+                return Err(EX.UnknownError(f"Failed to create default profile: {result.unwrap_err()}"))
             return Ok(default_profile)
         except Exception as e:
             L.error(f"Error during user signup: {e}")
@@ -3007,16 +3179,25 @@ class TasksService:
         """
         return await self.task_repo.update_progress(task_id, percentage, message, status)
 
-    async def complete_task(self, task_id: str, success: bool, error_msg: str = None) -> Result[M.TaskX, EX.JubError]:
+    async def get_task(self, task_id: str) -> Result[M.TaskX, EX.JubError]:
+        task_result = await self.task_repo.get_by_id(task_id)
+        if task_result.is_err:
+            return Err(EX.NotFound(f"Task '{task_id}' not found."))
+        return task_result
+
+    async def complete_task(self, task_id: str, success: bool, error_msg: str = None, require_active: bool = False) -> Result[M.TaskX, EX.JubError]:
         """
         Finalizes a task attempt. Synchronizes the root status and the attempt history.
         Called by the background worker when the job succeeds or crashes.
+        With `require_active`, a task that already finished (SUCCESS/FAILED) is rejected with a ConflictError.
         """
         task_result = await self.task_repo.get_by_id(task_id)
         if task_result.is_err:
             return task_result
-            
+
         task = task_result.unwrap()
+        if require_active and task.current_status not in (ENUMS.TaskStatusEnum.PENDING, ENUMS.TaskStatusEnum.RUNNING):
+            return Err(EX.ConflictError(f"Task '{task_id}' is already {task.current_status.value}."))
         final_status = ENUMS.TaskStatusEnum.SUCCESS if success else ENUMS.TaskStatusEnum.FAILED
         now = DT.datetime.now(DT.timezone.utc)
         
