@@ -67,27 +67,57 @@ jubapi/
 
 ## Environment variables
 
-All variables are loaded from the file pointed to by `JUB_ENV_FILE_PATH` (defaults to `.env`).
+All variables are loaded from the file pointed to by `JUB_ENV_FILE_PATH` (defaults to `.env`). The full reference, grouped by topic, is in [docs/configuration.md](docs/configuration.md).
+
+### Application
 
 | Variable | Default | Description |
 |---|---|---|
 | `JUB_ENV_FILE_PATH` | `.env` | Path to the env file to load |
 | `JUB_MONGODB_URI` | `mongodb://localhost:27017/jub` | MongoDB connection string |
 | `JUB_MONGODB_DATABASE_NAME` | `jub` | Database name |
+| `JUB_ROOT_PATH` | `""` | FastAPI root path, used when running behind a reverse proxy |
 | `JUB_XOLO_API_URL` | `http://localhost:10000/api/v4` | Xolo auth service base URL |
 | `JUB_XOLO_SECRET` | `secret` | Shared secret for Xolo token validation |
-| `JUB_ROOT_PATH` | `` | FastAPI root path, used when running behind a reverse proxy |
-| `JUB_HOST` | `0.0.0.0` | Uvicorn bind host |
-| `JUB_PORT` | `5000` | Uvicorn bind port |
 | `JUB_LOG_DEBUG` | `1` | Set to `0` to disable console logging |
 | `JUB_LOG_NAME` | `jubapi` | Logger name |
 | `JUB_LOG_PATH` | `/log` | Directory where log files are written |
-| `JUB_CORS_ORIGINS` | `*` | Comma-separated list of allowed CORS origins |
+| `JUB_CORS_ORIGINS` | `http://localhost:3100,https://jub.tamps.cinvestav.mx` | Comma-separated list of allowed CORS origins |
 | `JUB_CORS_METHODS` | `*` | Comma-separated list of allowed HTTP methods |
 | `JUB_CORS_HEADERS` | `*` | Comma-separated list of allowed headers |
-| `JUB_CORS_CREDENTIALS` | `True` | Whether to allow credentials in CORS |
+| `JUB_CORS_CREDENTIALS` | `True` | Whether to allow credentials in CORS (`true`/`1`) |
 | `JUB_OPENAPI_TITLE` | `OCA - API` | Title shown in the OpenAPI docs |
 | `JUB_OPENAPI_VERSION` | `0.0.1` | Version shown in the OpenAPI docs |
+| `JUB_OPENAPI_SUMMARY` | `This API enable the manipulation of observatories and catalogs` | Summary shown in the OpenAPI docs |
+| `JUB_OPENAPI_DESCRIPTION` | `""` | Description shown in the OpenAPI docs |
+| `JUB_OPENAPI_LOGO` | `https://i.ibb.co/9vSnz09/android-chrome-192x192.png` | Logo shown in the OpenAPI docs |
+| `JUB_STORAGE_BACKEND` | `FS` | Storage backend for uploaded files: `FS`, `MEMORY` or `MICTLANX` (see [docs/storage.md](docs/storage.md)) |
+| `JUB_STORAGE_PATH` | `/jub` | Base directory for the `FS` backend |
+| `JUB_STORAGE_CACHE_MAX_BYTES` | `4294967296` (4 GB) | Read cache size for the `FS` and `MICTLANX` backends |
+| `JUB_STORAGE_CACHE_TTL` | `300` | Read cache TTL in seconds |
+| `JUB_MICTLANX_URI` | `""` | MictlanX router URI, required when `JUB_STORAGE_BACKEND=MICTLANX` |
+| `JUB_MICTLANX_BUCKET_ID` | `jub` | MictlanX bucket where files are stored |
+| `JUB_MICTLANX_CLIENT_ID` | `jubapi` | Client id used in MictlanX logs |
+| `JUB_SEARCH_PRODUCT_CACHE_TTL` | `60` | TTL in seconds of the product search cache |
+| `JUB_SEARCH_OBSERVATORY_CACHE_TTL` | `120` | TTL in seconds of the observatory search cache |
+| `JUB_ORPHAN_CHECK_ENABLED` | `0` | Set to `1` to periodically look for stored files whose product was deleted |
+| `JUB_ORPHAN_CHECK_INTERVAL_SECONDS` | `3600` | Seconds between orphan checks |
+| `JUB_ORPHAN_CHECK_DELETE` | `0` | Set to `1` to delete orphaned files instead of only logging them |
+
+### Deployment
+
+Read by `run_local.sh` and the compose files, not by the Python code.
+
+| Variable | Default | Description |
+|---|---|---|
+| `JUB_HOST` | `0.0.0.0` | Uvicorn bind host |
+| `JUB_PORT` | `5000` | Uvicorn bind port |
+| `JUB_RELOAD` | unset | When set (even empty), the API container runs uvicorn with `--reload` |
+| `JUB_MONGODB_HOST_PORT` | `27027` | Host port mapped to the MongoDB container |
+| `JUB_DOCKERFILE` | `Dockerfile` | Dockerfile used to build the API image |
+| `JUB_IMAGE_NAME` | `jub:api-0.0.1a0` | API image name |
+| `JUB_UI_IMAGE` | `nachocode/jub:ui-0.1.0a5` | Jub UI image |
+| `JUB_UI_LOCAL_PORT` | `3000` | Host port for the Jub UI |
 
 
 ## Local development

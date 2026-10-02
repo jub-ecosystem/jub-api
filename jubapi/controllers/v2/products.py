@@ -12,7 +12,8 @@ import jubapi.middlewares as MX
 import jubapi.models.v2 as M
 import jubapi.dto.v2 as DTO
 import jubapi.enums.v2 as ENUMS
-from jubapi.storage import StorageBackend
+import jubapi.errors as EX
+from jubapi.storage import StorageBackend, InvalidStorageKey, safe_filename
 from jubapi.log.log import Log
 
 router = APIRouter(prefix="/products", tags=["products_v2"])
@@ -392,6 +393,12 @@ async def upload_product_file(
     once it has finished indexing the stored file.
     """
     t0 = time.monotonic()
+    # The file name becomes part of the storage path: keep only its last component.
+    try:
+        filename = safe_filename(file.filename)
+    except InvalidStorageKey as e:
+        log.error({"action": "controller.product.upload", "error": str(e), "input": {"product_id": product_id}})
+        raise EX.ValidationError(detail=str(e)).to_http_exception()
     check = await prod_svc.get_product_by_id(product_id)
     if check.is_err:
         log.error({"action": "controller.product.upload", "error": str(check.unwrap_err().detail), "input": {"product_id": product_id}})
@@ -404,7 +411,7 @@ async def upload_product_file(
     task_result = await task_svc.create_task(DTO.CreateTaskDTO(
         user_id        = current_user.user_id,
         observatory_id = observatory_id,
-        title          = f"Index: {product.name} — {file.filename}",
+        title          = f"Index: {product.name} — {filename}",
         description    = f"File ingestion queued for product {product_id}.",
         operation      = ENUMS.TaskOperationEnum.INDEX,
     ))
@@ -415,9 +422,9 @@ async def upload_product_file(
     job_id = task_result.unwrap()
     data = await file.read()
     background_tasks.add_task(
-        _process_upload, product_id, job_id, file.filename, data, storage, task_svc, prod_svc
+        _process_upload, product_id, job_id, filename, data, storage, task_svc, prod_svc
     )
-    log.info({"action": "controller.product.upload", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"product_id": product_id, "filename": file.filename}, "result": {"job_id": job_id}})
+    log.info({"action": "controller.product.upload", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"product_id": product_id, "filename": filename}, "result": {"job_id": job_id}})
     return DTO.ProductUploadResponseDTO(job_id=job_id, product_id=product_id)
 
 
@@ -440,8 +447,12 @@ async def download_product_file(
         log.error({"action": "controller.product.download", "error": str(check.unwrap_err().detail), "input": {"product_id": product_id}})
         raise check.unwrap_err().to_http_exception()
 
-    prefix = storage.key_for(product_id, job_id) if job_id else storage.prefix_for(product_id)
-    keys   = await storage.list(prefix)
+    try:
+        prefix = storage.key_for(product_id, job_id) if job_id else storage.prefix_for(product_id)
+        keys   = await storage.list(prefix)
+    except InvalidStorageKey as e:
+        log.error({"action": "controller.product.download", "error": str(e), "input": {"product_id": product_id, "job_id": job_id}})
+        raise HTTPException(status_code=400, detail=str(e))
 
     if not keys:
         log.error({"action": "controller.product.download", "error": "No files found", "input": {"product_id": product_id, "job_id": job_id}})

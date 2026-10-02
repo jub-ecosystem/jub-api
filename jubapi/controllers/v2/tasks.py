@@ -5,6 +5,7 @@ from fastapi import Depends, APIRouter, status
 import jubapi.services.v2 as S
 import jubapi.middlewares as MX
 import jubapi.dto.v2 as DTO
+import jubapi.enums.v2 as ENUMS
 from jubapi.log.log import Log
 import jubapi.errors as EX
 
@@ -111,17 +112,31 @@ async def complete_task(
     payload:  DTO.TaskCompleteDTO,
     task_srv: S.TasksService          = Depends(MX.get_tasks_service),
     obs_svc:  S.ObservatoriesService  = Depends(MX.get_observatories_service),
+    current_user: DTO.UserProfileDTO  = Depends(MX.get_current_user),
 ):
     """
-    Called by external systems (indexers, provisioners) when their work is done.
+    Called when the work behind a task is done.
 
-    - `success: true`  → marks task SUCCESS and **enables** the associated observatory.
+    - `success: true`  → marks task SUCCESS; a SETUP task also **enables** the associated observatory.
     - `success: false` → marks task FAILED; observatory stays disabled.
 
-    No user authentication required — this is a machine-to-machine endpoint.
+    Only users linked to the task's observatory (any role) can complete it, and only while
+    the task is still pending/running (409 otherwise).
     """
     t0 = T.monotonic()
-    task_result = await task_srv.complete_task(task_id, payload.success, payload.message)
+    check = await task_srv.get_task(task_id)
+    if check.is_ok:
+        check = await obs_svc.ensure_observatory_role(check.unwrap().observatory_id, current_user.user_id)
+    if check.is_err:
+        L.error({
+            "action":"tasks.complete_task",
+            "input":{"task_id": task_id, "user_id": current_user.user_id},
+            "error":str(check.unwrap_err()),
+            "duration_ms": (T.monotonic() - t0) * 1000
+        })
+        raise check.unwrap_err().to_http_exception()
+
+    task_result = await task_srv.complete_task(task_id, payload.success, payload.message, require_active=True)
     if task_result.is_err:
         L.error({
             "action":"tasks.complete_task",
@@ -134,7 +149,8 @@ async def complete_task(
     task             = task_result.unwrap()
     obs_enabled      = False
 
-    if payload.success:
+    # Only the SETUP task publishes the observatory; afterwards its owner controls the status.
+    if payload.success and task.operation == ENUMS.TaskOperationEnum.SETUP:
         enable_result = await obs_svc.enable_observatory(task.observatory_id)
         obs_enabled   = enable_result.is_ok
         if not obs_enabled:

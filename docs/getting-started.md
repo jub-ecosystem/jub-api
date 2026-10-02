@@ -55,24 +55,24 @@ poetry shell       # activate the virtual environment
 ## Step 3 — Configure environment
 
 The server loads its configuration from the file pointed to by `JUB_ENV_FILE_PATH`
-(defaults to `.env`).  Copy the provided template and fill in the values:
+(defaults to `.env`). Create a `.env` file in the project root with at least the
+variables below. The example values match the services started by `./run_local.sh`:
 
 ```bash
-cp .env.example .env
+JUB_MONGODB_URI=mongodb://localhost:27027/jub
+JUB_MONGODB_DATABASE_NAME=jub
+JUB_XOLO_API_URL=http://localhost:10000/api/v4
+JUB_XOLO_SECRET=<your-xolo-secret>
+JUB_STORAGE_BACKEND=FS
+JUB_STORAGE_PATH=/tmp/jub
+JUB_LOG_PATH=./log
 ```
 
-Key variables:
+The code defaults (`mongodb://localhost:27017/jub`, `/jub`, `/log`, …) are listed in
+[Configuration](configuration.md), together with every other variable (CORS, OpenAPI,
+storage backends, caches, orphan check, and the Docker deployment variables).
 
-| Variable | Description | Default |
-|---|---|---|
-| `JUB_MONGODB_URI` | MongoDB connection string | `mongodb://localhost:27027/jub` |
-| `JUB_MONGODB_DATABASE_NAME` | Database name | `jub` |
-| `JUB_XOLO_API_URL` | Xolo auth service URL | `http://localhost:3000` |
-| `JUB_XOLO_SECRET` | Shared secret for Xolo | — |
-| `JUB_LOG_DEBUG` | Enable verbose logging (`1` / `0`) | `0` |
-| `JUB_ROOT_PATH` | FastAPI root path for reverse proxies | `""` |
-
-For tests a separate `.env.test` file is used, which points to `jub_test` database
+For tests a separate `.env.test` file is used, which points to the `jub_test` database
 on port `27027`.
 
 ---
@@ -116,7 +116,7 @@ coverage run -m pytest tests/ -s -vvvv && coverage report -m
 ## Step 6 — Browse the docs locally
 
 ```bash
-mkdocs serve
+zensical serve
 ```
 
 Documentation will be served at `http://localhost:8000`.

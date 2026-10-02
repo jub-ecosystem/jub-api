@@ -35,6 +35,7 @@ from httpx import AsyncClient
 from jubapi.db.constants import CollectionNames
 
 BASE = "/api/v2/observatories"
+TEST_USER_ID = "test_user_id"  # matches _FAKE_USER in conftest.py
 
 
 # ==========================================
@@ -52,6 +53,7 @@ async def clean(test_db):
     await test_db[CollectionNames.OBSERVATORY_PRODUCT_LINKS.value].drop()
     await test_db[CollectionNames.OBSERVATORY_SERVICE_LINKS.value].drop()
     await test_db[CollectionNames.OBSERVATORY_DATASOURCE_LINKS.value].drop()
+    await test_db[CollectionNames.OBSERVATORY_USER_LINKS.value].drop()
     await test_db[CollectionNames.CATALOGS.value].drop()
     await test_db[CollectionNames.PRODUCTS.value].drop()
     await test_db[CollectionNames.SERVICES.value].drop()
@@ -76,7 +78,8 @@ async def seeded_observatories(async_client: AsyncClient, clean):
     from jubapi.db.constants import CollectionNames as CN
     import jubapi.models.v2 as M
 
-    col = get_collection(CN.OBSERVATORIES.value)
+    col       = get_collection(CN.OBSERVATORIES.value)
+    user_link = get_collection(CN.OBSERVATORY_USER_LINKS.value)
     for i in range(1, 6):
         obs = M.ObservatoryX(
             observatory_id=f"obs_{i:03d}",
@@ -84,6 +87,9 @@ async def seeded_observatories(async_client: AsyncClient, clean):
             description=f"Test observatory number {i}",
         )
         await col.insert_one(obs.model_dump())
+        # GET /observatories/ only lists observatories linked to the current user
+        link = M.ObservatoryToUserLink(observatory_id=obs.observatory_id, user_id=TEST_USER_ID)
+        await user_link.insert_one(link.model_dump())
     return async_client
 
 
@@ -342,7 +348,6 @@ async def test_setup_observatory_returns_201(async_client: AsyncClient):
     """
     payload = {
         "title": "Setup Observatory - Test",
-        "user_id": "user_001",
         "description": "Provisioned via setup endpoint from test_setup_observatory_returns_201",
     }
     resp = await async_client.post(f"{BASE}/setup", json=payload)
@@ -358,7 +363,6 @@ async def test_setup_observatory_custom_id(async_client: AsyncClient):
     """When observatory_id is provided to /setup, it must be honoured."""
     payload = {
         "title": "Custom Setup - Test",
-        "user_id": "user_002",
         "description": "Provisioned via setup endpoint with custom ID from test_setup_observatory_custom_id",
         "observatory_id": "custom_setup_id",
     }
@@ -375,13 +379,14 @@ async def test_setup_observatory_is_disabled(async_client: AsyncClient):
     the response shape from GET still returns it (the list endpoint includes
     disabled observatories).
     """
-    payload = {"title": "Disabled Obs", "user_id": "user_003"}
+    payload = {"title": "Disabled Obs"}
     setup_resp = await async_client.post(f"{BASE}/setup", json=payload)
     obs_id = setup_resp.json()["observatory_id"]
 
     # The observatory must be retrievable (it exists) …
     get_resp = await async_client.get(f"{BASE}/{obs_id}")
     assert get_resp.status_code == 200
+    assert get_resp.json()["is_disabled"] is True
     # … and the list endpoint must include it (disabled items are not filtered out)
     list_resp = await async_client.get(BASE)
     ids = [o["observatory_id"] for o in list_resp.json()]
@@ -954,3 +959,142 @@ async def test_bulk_assign_products_nonexistent_observatory(async_client: AsyncC
     payload = {"products": [{"name": "Ghost Product", "description": ""}]}
     resp = await async_client.post(f"{BASE}/ghost_obs/products/bulk", json=payload)
     assert resp.status_code == 404
+
+
+# ==========================================
+# Status  (PATCH /{observatory_id}/status) and setup-task completion
+# ==========================================
+
+async def _insert_observatory(obs_id: str, owner_id: str = None, with_role: bool = True, is_disabled: bool = False):
+    """Inserts an observatory directly, optionally linked to `owner_id` (a legacy link has no `role`)."""
+    from jubapi.db import get_collection
+    import jubapi.models.v2 as M
+    obs = M.ObservatoryX(observatory_id=obs_id, title=f"Obs {obs_id}", is_disabled=is_disabled)
+    await get_collection(CollectionNames.OBSERVATORIES.value).insert_one(obs.model_dump())
+    if owner_id:
+        link = M.ObservatoryToUserLink(observatory_id=obs_id, user_id=owner_id).model_dump(mode="json")
+        if not with_role:
+            link.pop("role")
+        await get_collection(CollectionNames.OBSERVATORY_USER_LINKS.value).insert_one(link)
+
+
+@pytest.mark.asyncio
+async def test_status_owner_can_disable_and_enable(async_client: AsyncClient, created_observatory):
+    obs_id = created_observatory["observatory_id"]
+    resp = await async_client.patch(f"{BASE}/{obs_id}/status", json={"is_disabled": True})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["is_disabled"] is True
+
+    resp = await async_client.patch(f"{BASE}/{obs_id}/status", json={"is_disabled": False})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["is_disabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_status_same_value_is_noop(async_client: AsyncClient, created_observatory):
+    """Setting the current value must not surface the repository's 'no changes made' NotFound."""
+    obs_id = created_observatory["observatory_id"]
+    resp = await async_client.patch(f"{BASE}/{obs_id}/status", json={"is_disabled": False})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["is_disabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_status_not_found(async_client: AsyncClient):
+    resp = await async_client.patch(f"{BASE}/ghost_obs/status", json={"is_disabled": True})
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_status_non_owner_forbidden(async_client: AsyncClient):
+    await _insert_observatory("someone_elses_obs", owner_id="another_user")
+    resp = await async_client.patch(f"{BASE}/someone_elses_obs/status", json={"is_disabled": True})
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_status_unlinked_observatory_forbidden(async_client: AsyncClient):
+    await _insert_observatory("orphan_obs")
+    resp = await async_client.patch(f"{BASE}/orphan_obs/status", json={"is_disabled": True})
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_status_legacy_link_without_role_is_owner(async_client: AsyncClient):
+    await _insert_observatory("legacy_obs", owner_id=TEST_USER_ID, with_role=False)
+    resp = await async_client.patch(f"{BASE}/legacy_obs/status", json={"is_disabled": True})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["is_disabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_status_requires_auth(unauth_client: AsyncClient):
+    resp = await unauth_client.patch(f"{BASE}/any_obs/status", json={"is_disabled": True})
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_status_pending_setup_conflict(async_client: AsyncClient):
+    setup = await async_client.post(f"{BASE}/setup", json={"title": "Pending setup"})
+    obs_id = setup.json()["observatory_id"]
+    resp = await async_client.patch(f"{BASE}/{obs_id}/status", json={"is_disabled": False})
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_status_failed_setup_conflict(async_client: AsyncClient):
+    setup = (await async_client.post(f"{BASE}/setup", json={"title": "Failed setup"})).json()
+    done = await async_client.post(f"/api/v2/tasks/{setup['task_id']}/complete", json={"success": False})
+    assert done.status_code == 200, done.text
+    resp = await async_client.patch(f"{BASE}/{setup['observatory_id']}/status", json={"is_disabled": False})
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_setup_complete_then_owner_toggles(async_client: AsyncClient, test_db):
+    setup = (await async_client.post(f"{BASE}/setup", json={"title": "Full flow", "user_id": "spoofed_user"})).json()
+    obs_id, task_id = setup["observatory_id"], setup["task_id"]
+
+    # The task belongs to the caller, not to a user_id sent in the payload.
+    task_doc = await test_db[CollectionNames.TASKS.value].find_one({"task_id": task_id})
+    assert task_doc["user_id"] == TEST_USER_ID
+
+    done = await async_client.post(f"/api/v2/tasks/{task_id}/complete", json={"success": True})
+    assert done.status_code == 200, done.text
+    assert done.json()["observatory_enabled"] is True
+
+    resp = await async_client.patch(f"{BASE}/{obs_id}/status", json={"is_disabled": True})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["is_disabled"] is True
+
+    # A finished task cannot be completed again (it would re-enable the observatory).
+    again = await async_client.post(f"/api/v2/tasks/{task_id}/complete", json={"success": True})
+    assert again.status_code == 409
+    get_resp = await async_client.get(f"{BASE}/{obs_id}")
+    assert get_resp.json()["is_disabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_complete_task_requires_link(async_client: AsyncClient, test_db):
+    import jubapi.models.v2 as M
+    import jubapi.enums.v2 as ENUMS
+    await _insert_observatory("foreign_setup_obs", owner_id="another_user", is_disabled=True)
+    task = M.TaskX(
+        task_id="foreign_setup_obs", user_id="another_user", observatory_id="foreign_setup_obs",
+        title="Setup", description="", operation=ENUMS.TaskOperationEnum.SETUP,
+    )
+    await test_db[CollectionNames.TASKS.value].insert_one(task.model_dump(mode="python"))
+    resp = await async_client.post("/api/v2/tasks/foreign_setup_obs/complete", json={"success": True})
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_complete_task_not_found(async_client: AsyncClient):
+    resp = await async_client.post("/api/v2/tasks/ghost_task/complete", json={"success": True})
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_complete_task_requires_auth(unauth_client: AsyncClient):
+    resp = await unauth_client.post("/api/v2/tasks/any_task/complete", json={"success": True})
+    assert resp.status_code == 401

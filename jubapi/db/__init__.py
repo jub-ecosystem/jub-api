@@ -6,7 +6,7 @@ client              = None
 # Get the MongoDB client and database instance
 def get_database():
     global client
-    return  client[Cfg.JUB_MONGODB_DATABASE_NAME] if client else None 
+    return  client[Cfg.JUB_MONGODB_DATABASE_NAME] if client else None
 
 def get_collection(name:str)->AsyncIOMotorCollection:
     db =  get_database()

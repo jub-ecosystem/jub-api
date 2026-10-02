@@ -14,7 +14,10 @@ class TaskOperationEnum(str, Enum):
     SYNC   = "sync"
     SETUP  = "setup"   # observatory provisioning
     INDEX  = "index"   # file ingestion / data indexing
-    
+
+class ObservatoryUserRoleEnum(str, Enum):
+    OWNER = "owner"
+
 
 class NotificationStatusEnum(str, Enum):
     INFO = "info"

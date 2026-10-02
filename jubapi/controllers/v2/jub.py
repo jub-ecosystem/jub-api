@@ -20,17 +20,17 @@ async def seed_database_from_yaml(
     file: UploadFile = File(...),
     cat_srv: S.CatalogService = Depends(MX.get_catalog_service),
     obs_srv: S.ObservatoriesService = Depends(MX.get_observatories_service),
-    prod_srv: S.ProductService = Depends(MX.get_product_service)
+    prod_srv: S.ProductService = Depends(MX.get_product_service),
+    current_user: DTO.V2.UserProfileDTO = Depends(MX.get_current_user),
 ):
     """
     Ingests a YAML file to fully seed Catalogs, Items, Aliases, Observatories, and Products.
+    The calling user becomes the owner of every observatory created.
     """
-    pass
 #     # 1. Read and parse the YAML file
     try:
         content = await file.read()
         yaml_data = yaml.safe_load(content)
-        print(yaml_data)
     except yaml.YAMLError as e:
         log.error(f"Failed to parse YAML: {e}")
         raise HTTPException(status_code=400, detail=f"Invalid YAML format: {str(e)}")
@@ -88,7 +88,7 @@ async def seed_database_from_yaml(
                 observatory_id=obs_dto.observatory_id,
                 title=obs_dto.title,
                 description=obs_dto.description
-            ))
+            ), user_id=current_user.user_id)
             
             # Link catalogs with priority based on array order
             for priority, cat_id in enumerate(obs_dto.linked_catalogs):

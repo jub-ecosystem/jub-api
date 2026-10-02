@@ -4,7 +4,7 @@ from jubapi.repositories.v2.base import BaseRepository
 from motor.motor_asyncio import AsyncIOMotorCollection as Collection
 import datetime as DT
 import jubapi.models.v2 as M
-from typing import List, Dict, Optional, Set, Tuple
+from typing import Any, List, Dict, Optional, Set, Tuple
 from option import Result,Err,Ok
 import jubapi.errors as EX
 from jubapi.log.log import Log
@@ -271,7 +271,29 @@ class ProductToCatalogItemLinkRepository(BaseRepository[M.CatalogItemToProductLi
         except Exception as e:
             return Err(EX.JubError.from_exception(e))
 
+class ObservatoryToUserLinkRepository(BaseRepository[M.ObservatoryToUserLink]):
+    def __init__(self, collection: Collection):
+        super().__init__(collection, M.ObservatoryToUserLink, "observatory_id")
 
+    async def get_user_ids_by_observatory_id(self, observatory_id: str) -> List[str]:
+        cursor = self.collection.find({"observatory_id": observatory_id}, {"user_id": 1, "_id": 0})
+        docs = await cursor.to_list(length=None)
+        return [d["user_id"] for d in docs if d.get("user_id")]
+    async def get_observatories_by_user_id(self, user_id: str) -> List[str]:
+        cursor = self.collection.find({"user_id": user_id}, {"observatory_id": 1, "_id": 0})
+        docs = await cursor.to_list(length=None)
+        return [d["observatory_id"] for d in docs if d.get("observatory_id")]
+
+    async def has_role(self, observatory_id: str, user_id: str, roles: Optional[List[ENUMS.ObservatoryUserRoleEnum]] = None) -> bool:
+        """True if the user is linked to the observatory. With `roles`, the link must hold one of them."""
+        query: Dict[str, Any] = {"observatory_id": observatory_id, "user_id": user_id}
+        if roles:
+            allowed = [r.value for r in roles]
+            # Links written before roles existed have no `role`: they are owners.
+            if ENUMS.ObservatoryUserRoleEnum.OWNER.value in allowed:
+                allowed.append(None)
+            query["role"] = {"$in": allowed}
+        return await self.collection.count_documents(query, limit=1) > 0
 
 
 

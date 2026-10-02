@@ -1,0 +1,16 @@
+[
+  {
+    "name": "Derechohabiencia / Afiliacion al Sistema de Salud",
+    "value": "DERECHOHABIENCIA",
+    "catalog_type": "INTEREST",
+    "description": "Tipo de afiliacion al sistema de salud en Mexico. Fuente: Certificados de Defuncion / ENSANUT.",
+    "items": [
+      { "name": "IMSS",                    "value": "IMSS",                  "code": 1, "value_type": "STRING", "aliases": [{ "value": "1", "value_type": "NUMBER", "description": "Codigo numerico" }], "children": [] },
+      { "name": "ISSSTE",                  "value": "ISSSTE",                "code": 2, "value_type": "STRING", "aliases": [{ "value": "2", "value_type": "NUMBER", "description": "Codigo numerico" }], "children": [] },
+      { "name": "PEMEX / SEDENA / MARINA", "value": "PEMEX_SEDENA_MARINA",   "code": 3, "value_type": "STRING", "aliases": [{ "value": "3", "value_type": "NUMBER", "description": "Codigo numerico" }], "children": [] },
+      { "name": "Seguro Popular / INSABI", "value": "SEGURO_POPULAR_INSABI", "code": 4, "value_type": "STRING", "aliases": [{ "value": "4", "value_type": "NUMBER", "description": "Codigo numerico" }], "children": [] },
+      { "name": "Seguro privado",          "value": "PRIVADO",               "code": 5, "value_type": "STRING", "aliases": [{ "value": "5", "value_type": "NUMBER", "description": "Codigo numerico" }], "children": [] },
+      { "name": "Sin derechohabiencia",    "value": "NINGUNA",               "code": 6, "value_type": "STRING", "aliases": [{ "value": "6", "value_type": "NUMBER", "description": "Codigo numerico" }], "children": [] }
+    ]
+  }
+]

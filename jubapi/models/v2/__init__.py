@@ -168,7 +168,11 @@ class ObservatoryToDataSourceLink(TimestampedModel):
     observatory_id: str
     source_id: str
   
-
+class ObservatoryToUserLink(TimestampedModel):
+    observatory_id: str
+    user_id: str
+    # Links written before roles existed have no `role`: they are owners.
+    role: ENUMS.ObservatoryUserRoleEnum = ENUMS.ObservatoryUserRoleEnum.OWNER
 
 
 # ==========================================

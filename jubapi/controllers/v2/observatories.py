@@ -25,7 +25,7 @@ async def setup_observatory(
     payload: DTO.ObservatorySetupDTO,
     obs_svc:  S.ObservatoriesService = Depends(MX.get_observatories_service),
     task_svc: S.TasksService          = Depends(MX.get_tasks_service),
-    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
+    current_user: DTO.UserProfileDTO = Depends(MX.get_current_user),
 ):
     """
     Creates a disabled observatory and a PENDING setup task.
@@ -41,13 +41,13 @@ async def setup_observatory(
         metadata       = payload.metadata or {},
         is_disabled    = True,
     )
-    obs_result = await obs_svc.create_observatory(model)
+    obs_result = await obs_svc.create_observatory(observatory=model, user_id=current_user.user_id)
     if obs_result.is_err:
         raise obs_result.unwrap_err().to_http_exception()
 
     task_result = await task_svc.create_task(DTO.CreateTaskDTO(
         task_id        = obs_id,
-        user_id        = payload.user_id,
+        user_id        = current_user.user_id,
         observatory_id = obs_id,
         title          = f"Setup: {payload.title}",
         description    = "Provisioning catalogs, products, and data sources.",
@@ -195,7 +195,7 @@ async def bulk_assign_products(
 async def create_observatory(
     payload: DTO.ObservatoryCreateDTO,
     svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
-    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
+    current_user: DTO.UserProfileDTO = Depends(MX.get_current_user),
 ):
     t0 = time.monotonic()
     obs_id = payload.observatory_id or nanoid(size=12)
@@ -206,7 +206,7 @@ async def create_observatory(
         image_url      = payload.image_url,
         metadata       = payload.metadata or {},
     )
-    result = await svc.create_observatory(model)
+    result = await svc.create_observatory(observatory= model, user_id=current_user.user_id)
     if result.is_err:
         log.error({"action": "controller.observatory.create", "error": str(result.unwrap_err().detail), "input": {"title": payload.title}})
         raise result.unwrap_err().to_http_exception()
@@ -226,12 +226,12 @@ async def create_observatory(
 )
 async def list_observatories(
     svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
-    _: DTO.UserProfileDTO = Depends(MX.get_current_user),
+    current_user: DTO.UserProfileDTO = Depends(MX.get_current_user),
     page_index: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
 ):
     t0 = time.monotonic()
-    result = await svc.get_observatories(limit=limit, page_index=page_index)
+    result = await svc.get_observatories_by_user(user_id=current_user.user_id, limit=limit, page_index=page_index)
     if result.is_err:
         log.error({"action": "controller.observatory.list", "error": str(result.unwrap_err().detail)})
         raise result.unwrap_err().to_http_exception()
@@ -287,6 +287,30 @@ async def update_observatory(
         log.error({"action": "controller.observatory.update", "error": str(result.unwrap_err().detail), "input": {"observatory_id": observatory_id}})
         raise result.unwrap_err().to_http_exception()
     log.info({"action": "controller.observatory.update", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"observatory_id": observatory_id}})
+    return result.unwrap()
+
+
+@router.patch(
+    "/{observatory_id}/status",
+    response_model=DTO.ObservatoryXDTO,
+    summary="Enable or disable an observatory",
+    description=(
+        "Only the observatory owner can change its status, and only after its setup task succeeded "
+        "(409 otherwise). Disabled observatories are hidden from search. Setting the current value is a no-op."
+    ),
+)
+async def set_observatory_status(
+    observatory_id: str,
+    payload: DTO.ObservatoryStatusUpdateDTO,
+    svc: S.ObservatoriesService = Depends(MX.get_observatories_service),
+    current_user: DTO.UserProfileDTO = Depends(MX.get_current_user),
+):
+    t0 = time.monotonic()
+    result = await svc.set_observatory_status(observatory_id, current_user.user_id, payload.is_disabled)
+    if result.is_err:
+        log.error({"action": "controller.observatory.status", "error": str(result.unwrap_err().detail), "input": {"observatory_id": observatory_id, "is_disabled": payload.is_disabled}})
+        raise result.unwrap_err().to_http_exception()
+    log.info({"action": "controller.observatory.status", "duration_ms": int((time.monotonic()-t0)*1000), "input": {"observatory_id": observatory_id, "is_disabled": payload.is_disabled}})
     return result.unwrap()
 
 

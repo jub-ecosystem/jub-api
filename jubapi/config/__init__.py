@@ -33,5 +33,10 @@ JUB_ORPHAN_CHECK_DELETE           = bool(int(os.environ.get("JUB_ORPHAN_CHECK_DE
 JUB_STORAGE_CACHE_MAX_BYTES = int(os.environ.get("JUB_STORAGE_CACHE_MAX_BYTES", str(4 * 1024 * 1024 * 1024)))  # 4 GB
 JUB_STORAGE_CACHE_TTL       = int(os.environ.get("JUB_STORAGE_CACHE_TTL", "300"))                              # 5 min
 
+JUB_STORAGE_BACKEND         = os.environ.get("JUB_STORAGE_BACKEND", "FS")       # FS | MEMORY | MICTLANX
+JUB_MICTLANX_URI            = os.environ.get("JUB_MICTLANX_URI", "")             # e.g. mictlanx://mictlanx-router-0@localhost:60666/?protocol=http&api_version=4&http2=0
+JUB_MICTLANX_BUCKET_ID      = os.environ.get("JUB_MICTLANX_BUCKET_ID", "jub")
+JUB_MICTLANX_CLIENT_ID      = os.environ.get("JUB_MICTLANX_CLIENT_ID", "jubapi")
+
 JUB_SEARCH_PRODUCT_CACHE_TTL     = int(os.environ.get("JUB_SEARCH_PRODUCT_CACHE_TTL", "60"))   # 1 min
 JUB_SEARCH_OBSERVATORY_CACHE_TTL = int(os.environ.get("JUB_SEARCH_OBSERVATORY_CACHE_TTL", "120"))  # 2 min

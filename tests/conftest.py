@@ -64,6 +64,9 @@ async def connect_to_database():
 @pytest.fixture( autouse=True)
 async def before_all():
     from jubapi.db import close_mongo_connection
+    # The search service is a process-wide singleton bound to the Mongo client;
+    # each test gets a fresh client/event loop, so force it to be rebuilt.
+    MX._search_service = None
     await connect_to_database()
     print("Database connected before tests")
     yield 
@@ -97,6 +100,7 @@ async def test_db():
         CollectionNames.OBSERVATORY_CATALOG_LINKS.value,
         CollectionNames.OBSERVATORY_SERVICE_LINKS.value,
         CollectionNames.OBSERVATORY_DATASOURCE_LINKS.value,
+        CollectionNames.OBSERVATORY_USER_LINKS.value,
         CollectionNames.BUILDING_BLOCKS.value,
         CollectionNames.PATTERNS.value,
         CollectionNames.STAGES.value,

@@ -6,7 +6,7 @@ import jubapi.services.v2 as S
 import jubapi.repositories.v2 as R
 import jubapi.db.constants as DC
 from jubapi.db import get_collection
-from jubapi.storage import StorageBackend, LocalStorageBackend
+from jubapi.storage import StorageBackend, create_storage_backend
 from xolo.client.client import XoloClient
 import jubapi.dto.v2 as DTO
 from jubapi.log import Log
@@ -41,6 +41,7 @@ def get_link_manager()->S.GraphLinkManager:
         observatory_service_link_repository        = R.ObservatoryToServiceLinkRepository(get_collection(DC.CollectionNames.OBSERVATORY_SERVICE_LINKS.value)),
         observatory_datasource_link_repository     = R.ObservatoryToDataSourceLinkRepository(get_collection(DC.CollectionNames.OBSERVATORY_DATASOURCE_LINKS.value)),
         product_product_link_repository            = R.ProductToProductLinkRepository(get_collection(DC.CollectionNames.PRODUCT_PRODUCT_LINKS.value)),
+        observatory_user_link_repository           = R.ObservatoryToUserLinkRepository(get_collection(DC.CollectionNames.OBSERVATORY_USER_LINKS.value)),
     )
     return graph_link_manager
 
@@ -142,6 +143,7 @@ def get_observatories_service(graph_link_manager: S.GraphLinkManager=Depends(get
         review_repository                   = review_repository,
         service_repository                  = service_repository,
         datasource_repository               = datasource_repository,
+        task_repository                     = R.TaskRepository(get_collection(DC.CollectionNames.TASKS.value)),
     )
     return service
 
@@ -275,11 +277,15 @@ def get_service_x_service(link_manager: S.GraphLinkManager = Depends(get_link_ma
     )
 
 
-# Storage backend — swap LocalStorageBackend for a cloud implementation in production
-_storage_backend: StorageBackend = LocalStorageBackend(
-    base_path  = Cfg.JUB_STORAGE_PATH,
-    max_bytes  = Cfg.JUB_STORAGE_CACHE_MAX_BYTES,
-    ttl        = Cfg.JUB_STORAGE_CACHE_TTL,
+# Storage backend — selected with JUB_STORAGE_BACKEND (FS | MEMORY | MICTLANX), see docs/storage.md
+_storage_backend: StorageBackend = create_storage_backend(
+    kind               = Cfg.JUB_STORAGE_BACKEND,
+    base_path          = Cfg.JUB_STORAGE_PATH,
+    max_bytes          = Cfg.JUB_STORAGE_CACHE_MAX_BYTES,
+    ttl                = Cfg.JUB_STORAGE_CACHE_TTL,
+    mictlanx_uri       = Cfg.JUB_MICTLANX_URI,
+    mictlanx_bucket_id = Cfg.JUB_MICTLANX_BUCKET_ID,
+    mictlanx_client_id = Cfg.JUB_MICTLANX_CLIENT_ID,
 )
 
 def get_storage_backend() -> StorageBackend:

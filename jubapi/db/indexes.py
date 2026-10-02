@@ -43,6 +43,14 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     await cical.create_index([("catalog_item_alias_id", ASCENDING)], name="idx_cical_alias_id")
     await cical.create_index([("catalog_item_id", ASCENDING)], name="idx_cical_item_id")
 
+    # observatories
+    await db["observatories"].create_index([("observatory_id", ASCENDING)], name="idx_obs_observatory_id")
+
+    # observatory_user_links (one link per user per observatory)
+    oul = db["observatory_user_links"]
+    await oul.create_index([("observatory_id", ASCENDING), ("user_id", ASCENDING)], unique=True, name="idx_oul_obs_user_unique")
+    await oul.create_index([("user_id", ASCENDING)], name="idx_oul_user_id")
+
     # products
     await db["products"].create_index([("product_id", ASCENDING)], name="idx_products_product_id")
 

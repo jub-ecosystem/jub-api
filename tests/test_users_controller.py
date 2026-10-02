@@ -81,7 +81,7 @@ async def test_signup_duplicate_username_returns_error(unauth_client: AsyncClien
     first = await unauth_client.post("/api/v2/users/signup", json=data)
     assert first.status_code == 200
     second = await unauth_client.post("/api/v2/users/signup", json=data)
-    assert second.status_code != 200
+    assert second.status_code == 400
 
 
 # ==========================================
@@ -111,7 +111,7 @@ async def test_login_wrong_password_returns_error(unauth_client: AsyncClient):
         "username": data["username"], "password": "WRONG_PASSWORD",
         "scope": data["scope"], "expiration": "1h",
     })
-    assert resp.status_code != 200
+    assert resp.status_code == 401
 
 
 @pytest.mark.asyncio

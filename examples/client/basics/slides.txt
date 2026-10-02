@@ -1,0 +1,692 @@
+JUB CLIENT BASICS (SCRIPTS 03-12) — CONTEXT FOR GENERATING A BEAMER DECK
+==========================================================================
+
+This file is the ONLY source of truth for the deck. It describes the example
+scripts in examples/client/basics, 03 to 12, which build and search a small
+"car photos" observatory with the JUB Python client.
+
+
+##########################################################################
+SECTION A — INSTRUCTIONS FOR THE MODEL
+##########################################################################
+
+A.1 Output
+- Produce ONE complete, compilable LaTeX Beamer document.
+- \documentclass[aspectratio=169]{beamer}, theme metropolis
+  (fallback: Madrid if metropolis is not installed).
+- Code is typeset with the minted package. The document must compile with:
+      lualatex -shell-escape slides.tex     (or xelatex -shell-escape)
+- Slides are in English. Keep identifiers, DSL queries and code exactly as
+  written in this file.
+
+A.2 Style: few words, many examples
+- One idea per frame.
+- Pattern for a code frame: first 2-4 short bullets (what + why), THEN the
+  code. If the idea needs more than 4 bullets, split it into two frames:
+  a bullet frame, then a code frame.
+- Max 4 bullets per frame, max ~10 words per bullet. No paragraphs.
+- Max ~14 lines of code per minted block. Use "..." to elide.
+- Use \alert{} for the items marked (!) in this file.
+- Where this file says DIAGRAM, draw it with TikZ (simple boxes + arrows).
+- Where it says OUTPUT, show it in a small minted block with language "text".
+- Where it says TABLE, use a booktabs tabular.
+
+A.3 Code rules (important)
+- Never invent client methods, DTO fields or parameters. Use only the code
+  in this file. Shortening is fine; renaming is not.
+- Every frame with minted code MUST be declared [fragile].
+- Only ASCII inside minted blocks (write -> not an arrow character).
+- Python code: \begin{minted}{python} ... \end{minted}
+  DSL queries: \begin{minted}{text} ... \end{minted}
+  Terminal output: \begin{minted}{text} ... \end{minted}
+- All scripts share the same boilerplate (see B.4). Show it ONCE, then in
+  later frames show only the lines that matter.
+
+A.4 Preamble to use
+
+    \documentclass[aspectratio=169]{beamer}
+    \usetheme{metropolis}
+    \usepackage{minted}
+    \usepackage{booktabs}
+    \usepackage{tikz}
+    \usetikzlibrary{arrows.meta,positioning}
+    \setminted{fontsize=\scriptsize, breaklines, autogobble,
+               frame=lines, framesep=2mm, style=friendly}
+    \title{JUB: Building and Searching an Observatory}
+    \subtitle{The Python client, step by step (examples 03--12)}
+    \date{}
+
+A.5 Example of the expected frame pattern (bullets, then code)
+
+    \begin{frame}[fragile]{Tag products (08)}
+      \begin{itemize}
+        \item Tags are catalog item ids
+        \item \alert{No tags: the product can never be found}
+      \end{itemize}
+      \begin{minted}{python}
+    tags = DTO.TagProductDTO(catalog_item_ids=[
+        item_id("TOYOTA"), item_id("SUPRA"), item_id("RED"),
+        item_id("Y1997"),  item_id("JP"),
+    ])
+    await client.add_product_tags(product_id, tags)
+      \end{minted}
+    \end{frame}
+
+A.6 Deck structure (sections and approximate frame count)
+    Title, Table of contents
+    1. The big picture ......................... 3 frames  (section C)
+    2. Vocabularies: catalogs (03) ............. 5 frames  (section D)
+    3. The observatory (04, 05) ................ 3 frames  (section E)
+    4. Products and files (06, 07, 09) ......... 5 frames  (section F)
+    5. Tagging and search (08) ................. 7 frames  (section G)
+    6. Data sources (10) ....................... 3 frames  (section H)
+    7. Services (11) ........................... 2 frames  (section I)
+    8. Review and publish (12) ................. 2 frames  (section J)
+    9. Wrap-up ................................. 3 frames  (section K)
+    Total: about 35 frames.
+
+
+##########################################################################
+SECTION B — SHARED CONTEXT (read before the scripts)
+##########################################################################
+
+B.1 What JUB is
+- A platform (FastAPI + MongoDB) to publish OBSERVATORIES: browsable
+  collections of products (files, photos, reports) and data.
+- Everything is described with shared vocabularies called CATALOGS.
+- Everything is searchable with a small query language (the DSL).
+- The client is the Python package `jub` (module jub.client.v2), async.
+
+B.2 The running example: car photos
+Folder source/cars has 8 photos named brand_model_color_year.jpg:
+
+    ford_mustang_blue_1968.jpg
+    mitsubishi_eclipse_black_1998.jpg
+    mitsubishi_eclipse_red_1998.jpg
+    mitsubishi_eclipse_white_1998.jpg
+    nissan_gtr_blue_1998.jpg
+    nissan_gtr_white_1998.jpg
+    toyota_supra_black_1997.jpg
+    toyota_supra_red_1997.jpg
+
+(!) The file name alone is enough to build the whole observatory:
+    catalogs, products, tags and search.
+
+B.3 How to run
+- Stack running locally (MongoDB, Xolo auth service, API on port 5000).
+- Config file examples/client/.env.examples:
+      JUB_API_URL=http://localhost:5000
+      JUB_USERNAME=invitado
+      JUB_PASSWORD=invitado
+- Run the scripts IN ORDER, 03 -> 12. Each one uses what the previous ones
+  created:
+      python examples/client/basics/03_catalogs.py
+      ...
+      python examples/client/basics/12_review_observatory.py
+
+B.4 Boilerplate shared by every script (show once, in section C)
+
+    import asyncio, os
+    import jub.dto.v2 as DTO
+    from jub.client.v2 import JubClientBuilder
+
+    USERNAME       = os.environ["JUB_USERNAME"]
+    OBSERVATORY_ID = f"cars_{USERNAME}"
+
+    def item_id(value: str) -> str:
+        return f"{value}_{USERNAME}"
+
+    async def main() -> None:
+        client = (await JubClientBuilder(API_URL, USERNAME, PASSWORD)
+                  .build()).unwrap()
+        ...
+
+    asyncio.run(main())
+
+B.5 Three conventions to explain early
+(!) Every client call returns a Result: Ok(value) or Err(error).
+    .unwrap() gives the value; check .is_err before if it may fail.
+    Errors are values, not exceptions.
+(!) We choose our own ids and suffix them with the username:
+    cars_invitado, TOYOTA_invitado. This way the later scripts know every
+    id without looking it up, and several users can share one server.
+- The client is async: every call is awaited inside asyncio.run(main()).
+
+B.6 DIAGRAM — core concepts (use in section C)
+
+    Catalog  --contains-->  Catalog item (value, code, aliases, children)
+    Observatory --links--> Catalog
+    Observatory --links--> Product --tagged with--> Catalog item
+    Observatory --links--> Data source --records use--> Catalog items
+    Observatory --links--> Service
+
+(!) Things exist on their own and are connected by LINKS. The same catalog
+    or product can belong to several observatories.
+
+B.7 TABLE — the lifecycle (use in section C and again in K)
+
+    Step  Script  What                          Main call
+    1     03      Vocabularies                  create_catalog
+    2     04      Observatory (disabled)        setup_observatory
+    3     05      Link catalogs                 link_catalog_to_observatory
+    4     06      Products                      create_product
+    5     07/09   Files                         upload_product / wait_uploads
+    6     08      Tags + search                 add_product_tags / search
+    7     10      Data                          register_data_source
+    8     11      Services                      index_service
+    9     12      Publish                       complete_task
+
+
+##########################################################################
+SECTION C — SECTION 1: THE BIG PICTURE (3 frames)
+##########################################################################
+
+Frame C1 "What is JUB?"          bullets from B.1 + the 8 file names (B.2)
+Frame C2 "Core concepts"         DIAGRAM B.6
+Frame C3 "Every script starts the same way"
+         bullets: Result/unwrap, ids with username, async (B.5)
+         code: boilerplate B.4
+
+
+##########################################################################
+SECTION D — SCRIPT 03: CATALOGS (5 frames)
+##########################################################################
+
+Goal: create the vocabularies used by tags, search and data records.
+
+D.1 TABLE "Catalogs are vocabularies" — what 03 creates
+
+    Catalog     Type       DSL block  Items
+    CAR_BRAND   INTEREST   VI         FORD, MITSUBISHI, NISSAN, TOYOTA
+                                      (models as children: MUSTANG, ECLIPSE,
+                                       GTR, SUPRA)
+    CAR_COLOR   INTEREST   VI         BLACK, BLUE, RED, WHITE (+ GOLD)
+                                      aliases: NEGRO, AZUL, ROJO, BLANCO,
+                                      DORADO
+    CAR_YEAR    TEMPORAL   VT         Y1968, Y1997, Y1998
+    COUNTRY     SPATIAL    VS         MX, US, JP, DE, KR
+
+Each catalog item has:
+- value      used in queries (UPPER_SNAKE_CASE)
+- code       a number (for years: the year itself)
+- aliases    other names for the same item (ROJO = RED)
+- children   a hierarchy (a brand's models)
+
+D.2 Frame "Items from file names"
+bullets:
+- Parse brand, model, color, year from each file name
+- Build unique lists of brands, colors, years
+code:
+
+    def parse(image: Path) -> tuple[str, str, str, int]:
+        """toyota_supra_red_1997.jpg -> ("TOYOTA", "SUPRA", "RED", 1997)"""
+        brand, model, color, year = (
+            part.upper().replace("-", "_") for part in image.stem.split("_"))
+        return brand, model, color, int(year)
+
+    def item(value, code, name="", **extra) -> DTO.CatalogItemCreateDTO:
+        return DTO.CatalogItemCreateDTO(
+            catalog_item_id = item_id(value),
+            name            = name or value.replace("_", " ").title(),
+            value           = value,
+            code            = code,
+            value_type      = "STRING",
+            **extra,
+        )
+
+D.3 Frame "A catalog with a hierarchy: brands -> models"
+bullets:
+- Models are children of their brand
+- (!) Children let VI(CAR_BRAND.TOYOTA.*) also match SUPRA
+code:
+
+    brand_items = []
+    for code, brand in enumerate(brands, start=1):
+        models = sorted({m for b, m, _, _ in cars if b == brand})
+        children = [item(m, code * 100 + i)
+                    for i, m in enumerate(models, start=1)]
+        brand_items.append(item(brand, code, children=children))
+
+    await client.create_catalog(DTO.CatalogCreateDTO(
+        catalog_id   = f"brands_{USERNAME}",
+        name         = "Car brands",
+        value        = "CAR_BRAND",
+        catalog_type = "INTEREST",
+        items        = brand_items,
+    ))
+
+D.4 Frame "Aliases and temporal items"
+bullets:
+- Aliases: another name for the same item (Spanish)
+- (!) Temporal items need value_type="DATETIME" + temporal_value
+- That date is what makes VT(>= 1997) work
+code (two short blocks):
+
+    aliases = [DTO.CatalogItemAliasCreateDTO(
+        value="ROJO", value_type="STRING", description="Spanish")]
+    color_items.append(item("RED", code, aliases=aliases))
+
+    DTO.CatalogItemCreateDTO(
+        catalog_item_id = item_id("Y1997"),
+        name            = "1997",
+        value           = "Y1997",
+        code            = 1997,
+        value_type      = "DATETIME",
+        temporal_value  = "1997-01-01T00:00:00Z",
+    )
+
+Also mention in one line: the COUNTRY catalog is created the same way,
+with catalog_type = "SPATIAL".
+
+D.5 Frame "Extend a catalog later"
+bullets:
+- Add one item to an existing catalog
+- Add an alias to an existing item
+code:
+
+    await client.create_catalog_item(DTO.CatalogItemStandaloneCreateDTO(
+        catalog_id      = f"colors_{USERNAME}",
+        catalog_item_id = item_id("GOLD"),
+        name = "Gold", value = "GOLD", code = 99, value_type = "STRING",
+    ))
+    await client.add_catalog_item_alias(
+        item_id("GOLD"),
+        DTO.CatalogItemAliasCreateDTO(
+            value="DORADO", value_type="STRING", description="Spanish"),
+    )
+
+    catalog = (await client.get_catalog(f"colors_{USERNAME}")).unwrap()
+
+
+##########################################################################
+SECTION E — SCRIPTS 04 + 05: THE OBSERVATORY (3 frames)
+##########################################################################
+
+E.1 Frame "Create the observatory (04)"
+bullets:
+- (!) setup_observatory() creates it DISABLED + a pending setup task
+- Fill it while nobody can see it; publish in 12
+- create_observatory() would create it enabled right away
+- The logged-in user becomes the OWNER
+code:
+
+    setup = (await client.setup_observatory(DTO.ObservatorySetupDTO(
+        observatory_id = OBSERVATORY_ID,          # "cars_invitado"
+        title          = f"Cars ({USERNAME})",
+        description    = "Photos of cars by brand, model, color and year.",
+        metadata       = {"topic": "cars"},
+    ))).unwrap()
+
+    print(setup.observatory_id, setup.task_id, setup.status)  # ... pending
+
+E.2 DIAGRAM "Observatory lifecycle"
+    setup_observatory (04)  ->  DISABLED + setup task "pending"
+    fill it (05-11)         ->  still invisible in search
+    complete_task (12)      ->  ENABLED, visible in search
+
+E.3 Frame "Link catalogs (05)"
+bullets:
+- Catalogs exist alone; linking adds them to the observatory
+- level = position in the observatory (0 = root)
+- One catalog can be linked to many observatories
+code:
+
+    catalogs = [f"brands_{USERNAME}", f"colors_{USERNAME}",
+                f"years_{USERNAME}",  f"countries_{USERNAME}"]
+    for level, catalog_id in enumerate(catalogs):
+        link = DTO.LinkCatalogDTO(catalog_id=catalog_id, level=level)
+        (await client.link_catalog_to_observatory(OBSERVATORY_ID, link)).unwrap()
+
+    for c in (await client.list_observatory_catalogs(OBSERVATORY_ID)).unwrap():
+        print(c.value, c.catalog_type, c.name)
+
+
+##########################################################################
+SECTION F — SCRIPTS 06, 07, 09: PRODUCTS AND FILES (5 frames)
+##########################################################################
+
+F.1 Frame "One product per photo (06)"
+bullets:
+- (!) create_product() creates AND links to the observatory
+- product_id is a storage path: only A-Z a-z 0-9 _ . -
+code:
+
+    for image in sorted(CARS_DIR.glob("*_*_*_*.*")):
+        brand, model, color, year = image.stem.split("_")
+        product = (await client.create_product(DTO.ProductCreateDTO(
+            product_id     = f"{image.stem}_{USERNAME}",
+            name           = f"{brand.title()} {model.title()} ({color}, {year})",
+            description    = f"Photo of a {color} {brand.title()} ...",
+            observatory_id = OBSERVATORY_ID,
+        ))).unwrap()
+
+    products = (await client.list_observatory_products(OBSERVATORY_ID)).unwrap()
+
+OUTPUT (last line):
+    cars_invitado has 8 products
+
+F.2 DIAGRAM "Upload is asynchronous (07)" — sequence
+    client --upload_product--> API     returns job_id immediately
+    API stores the file in the background (a task)
+    client --get_task(job_id)--> pending -> running -> success
+    client --download_product--> latest file
+
+F.3 Frame "Upload one file (07)"
+bullets:
+- (!) upload_product() returns at once with a job_id
+- Poll get_task() until "success" or "failed"
+- download_product() returns the latest file
+code:
+
+    job = (await client.upload_product(product_id, str(image))).unwrap()
+
+    task = (await client.get_task(job.job_id)).unwrap()
+    while task.current_status in ("pending", "running"):
+        await asyncio.sleep(1)
+        task = (await client.get_task(job.job_id)).unwrap()
+
+    content = (await client.download_product(product_id)).unwrap()
+    print(content == image.read_bytes())   # True
+
+F.4 Frame "Many files, retries, no duplicates (09)" — bullets only
+- register_upload(): queue a file (nothing sent yet)
+- wait_uploads(workers, max_retries): send the queue in parallel
+- max_retries = total attempts per file (1 = no retry)
+- (!) The registry file remembers successes: 2nd run skips all
+
+F.5 Frame "Bulk upload (09)" — code + OUTPUT
+code:
+
+    client = (await (
+        JubClientBuilder(API_URL, USERNAME, PASSWORD)
+        .with_upload_registry(".upload_registry.json")
+        .build()
+    )).unwrap()
+
+    for image in sorted(CARS_DIR.glob("*_*_*_*.*")):
+        client.register_upload(f"{image.stem}_{USERNAME}", str(image)).unwrap()
+
+    result = (await client.wait_uploads(workers=2, max_retries=3)).unwrap()
+    for failure in result.failed:
+        print(failure.product_id, failure.attempts, failure.last_error)
+
+OUTPUT (second run of 09, after 07 and a first run of 09):
+    Uploaded: 0
+    Skipped (already uploaded): 8
+    Failed: 0
+
+
+##########################################################################
+SECTION G — SCRIPT 08: TAGGING AND SEARCH (7 frames, the core)
+##########################################################################
+
+G.1 Frame "Tags make products searchable" — bullets only
+- A tag = a catalog item id linked to a product
+- Each car gets 5 tags: brand, model, color, year, country
+- The country is the brand's origin (not in the file name)
+- (!) No tags: the product can never be found
+
+G.2 Frame "Where is each car from?"
+bullets:
+- A small map: brand -> COUNTRY item (from 03)
+- Unknown brand: stop with a clear message
+code:
+
+    BRAND_COUNTRY = {
+        "TOYOTA": "JP", "NISSAN": "JP", "MITSUBISHI": "JP",
+        "FORD": "US", ...
+    }
+
+    brands  = {image.stem.split("_")[0].upper() for image in images}
+    unknown = sorted(brands - BRAND_COUNTRY.keys())
+    if unknown:
+        sys.exit(f"Add these brands to BRAND_COUNTRY: {', '.join(unknown)}")
+
+G.3 Frame "Tag every photo"
+code:
+
+    for image in images:
+        brand, model, color, year = (
+            p.upper().replace("-", "_") for p in image.stem.split("_"))
+        country = BRAND_COUNTRY[brand]
+        tags = DTO.TagProductDTO(catalog_item_ids=[
+            item_id(brand), item_id(model), item_id(color),
+            item_id(f"Y{year}"), item_id(country),
+        ])
+        (await client.add_product_tags(f"{image.stem}_{USERNAME}", tags)).unwrap()
+
+    tags = (await client.get_product_tag_details(product_id)).unwrap()
+    print(", ".join(tag.name for tag in tags))
+
+OUTPUT:
+    Tagged 8 products
+    ford_mustang_blue_1968_invitado: Ford, Mustang, Blue, 1968, United States
+
+G.4 TABLE "The query language (DSL)"
+A query is "jub.v1." followed by one or more blocks:
+
+    Block   Dimension   Question   Matches items of type
+    VS(..)  spatial     where?     SPATIAL    (COUNTRY)
+    VT(..)  temporal    when?      TEMPORAL   (CAR_YEAR), supports > >= < <= =
+    VI(..)  interest    what?      INTEREST   (CAR_BRAND, CAR_COLOR)
+
+Rules (as bullets under the table):
+- Inside a block: AND / OR
+- Between blocks: always AND
+- Write items as CATALOG.VALUE: VI(CAR_COLOR.RED)
+- * = no filter for that block
+
+G.5 Frame "DSL by example" — a minted {text} block with comments
+
+    jub.v1.VI(CAR_BRAND.TOYOTA)                   # Toyota
+    jub.v1.VI(CAR_BRAND.TOYOTA AND CAR_COLOR.RED) # red Toyota
+    jub.v1.VI(CAR_BRAND.TOYOTA.*)                 # Toyota + its models
+    jub.v1.VI(CAR_COLOR.ROJO)                     # alias -> RED
+    jub.v1.VT(>= 1997)                            # 1997 or later
+    jub.v1.VT(>= 1997 AND <= 1998)                # a range
+    jub.v1.VS(COUNTRY.JP)                         # Japanese cars
+    jub.v1.VS(COUNTRY.JP).VI(CAR_COLOR.RED)       # red AND Japanese
+    jub.v1.VS(*)                                  # any place = no filter
+
+Then 3 alert bullets (can be a second frame "Three traps"):
+(!) VS(*) means "any place": it returns every product, even untagged ones
+(!) VI(CAR_BRAND.TOYOTA) does NOT match SUPRA; use TOYOTA.* for children
+(!) Values are matched by name in ALL catalogs: always pass observatory_id
+
+G.6 Frame "Run a search"
+bullets:
+- search() takes a SearchQueryDTO
+- observatory_id limits the search to our observatory
+- Results are dicts (JSON)
+code:
+
+    queries = [
+        "jub.v1.VI(CAR_BRAND.FORD)",
+        "jub.v1.VT(>= 1968)",
+        "jub.v1.VS(COUNTRY.US).VI(CAR_COLOR.BLUE)",
+    ]
+    for query in queries:
+        results = (await client.search(DTO.SearchQueryDTO(
+            query=query, observatory_id=OBSERVATORY_ID, limit=50,
+        ))).unwrap()
+        for product in results:
+            print(product["name"], product["spatial_variable"]["value"])
+
+G.7 Frame "Results" — OUTPUT (real run, first photo = the Ford)
+
+    jub.v1.VI(CAR_BRAND.FORD) -> 1 products
+      Ford Mustang (blue, 1968)          US
+
+    jub.v1.VT(>= 1968) -> 8 products
+      Toyota Supra (red, 1997)           JP
+      Toyota Supra (black, 1997)         JP
+      Mitsubishi Eclipse (black, 1998)   JP
+      Ford Mustang (blue, 1968)          US
+      ...  (4 more, all JP)
+
+    jub.v1.VS(COUNTRY.US).VI(CAR_COLOR.BLUE) -> 1 products
+      Ford Mustang (blue, 1968)          US
+
+Each result also carries its own metadata: spatial_variable (the country),
+temporal_variable (the year) and interest_variable (brand, model, color).
+
+
+##########################################################################
+SECTION H — SCRIPT 10: DATA SOURCES (3 frames)
+##########################################################################
+
+Goal: store numbers (car sales) described with the same catalog items.
+
+H.1 Frame "A record = where + when + what + numbers" — TABLE
+
+    Field                    Meaning   Example
+    spatial_id               where     MX_invitado  (COUNTRY item id)
+    temporal_id              when      1997-01-01T00:00:00Z
+    interest_ids             what      [TOYOTA_invitado]
+    numerical_interest_ids   numbers   {"UNITS": 12000}
+    raw_payload              anything  {"country": "MX", ...}
+
+H.2 Frame "Create, link, fill"
+bullets:
+- register_data_source(): create it
+- link_datasource_to_observatory(): attach it
+- ingest_records(): insert records in bulk
+- 5 countries x 4 brands x 3 years = 60 records
+code:
+
+    source = (await client.register_data_source(DTO.DataSourceCreateDTO(
+        name="Car sales (invitado)", description="Units sold ...", format="json",
+    ))).unwrap()
+    await client.link_datasource_to_observatory(OBSERVATORY_ID, source.source_id)
+
+    records = [
+        DTO.DataRecordCreateDTO(
+            record_id              = f"{country}_{brand}_{year}_{USERNAME}",
+            spatial_id             = item_id(country),
+            temporal_id            = f"{year}-01-01T00:00:00Z",
+            interest_ids           = [item_id(brand)],
+            numerical_interest_ids = {"UNITS": random.randint(1_000, 50_000)},
+            raw_payload            = {"country": country, "brand": brand, "year": year},
+        )
+        for country in COUNTRIES for brand in brands for year in years
+    ]
+    inserted = (await client.ingest_records(source.source_id, records)).unwrap()
+
+H.3 Frame "Query the records"
+bullets:
+- Same DSL, run against one data source
+- (!) Here identifiers are item IDS (MX_invitado), not values
+code:
+
+    query = f"jub.v1.VS({item_id('MX')}).VI({item_id('FORD')})"
+    rows = (await client.query_records(
+        source.source_id, DTO.DataSourceQueryDTO(query=query))).unwrap()
+    for row in rows:
+        print(row["raw_payload"]["year"], row["numerical_interest_ids"]["UNITS"])
+
+OUTPUT (numbers are random):
+    jub.v1.VS(MX_invitado).VI(FORD_invitado)
+      1968  FORD         23,511 units
+      1997  FORD          4,870 units
+      1998  FORD         41,062 units
+
+One-line mention: the DSL also has VO (AVG, SUM, COUNT) and BY (grouping)
+for charts; see examples/client/advanced.
+
+
+##########################################################################
+SECTION I — SCRIPT 11: SERVICES (2 frames)
+##########################################################################
+
+I.1 DIAGRAM "A service is a pipeline description" (tree, left to right)
+    Service -> Workflow -> Stage(s) -> Pattern -> Building block
+                                                  (container image + command)
+bullets:
+- index_service() creates the whole tree in one call
+- Then link it to the observatory
+
+I.2 Frame "Index and link a service"
+code:
+
+    service = (await client.index_service(DTO.ServiceIndexDTO(
+        name     = f"car-photo-classifier-{USERNAME}",
+        owner_id = client.user_id,
+        provider = ENUM.ServiceProviderEnum.EXTERNAL,
+        workflow = DTO.WorkflowInlineDTO(name="Classify photos", stages=[
+            DTO.StageInlineDTO(
+                name="Classify", source="s3://cars/photos",
+                sink=f"jub://observatories/{OBSERVATORY_ID}",
+                endpoint="http://classifier/run",
+                transformation=DTO.PatternInlineDTO(
+                    name="Classifier pattern", task="classify",
+                    pattern="pipeline", workers=1,
+                    building_block=DTO.BuildingBlockInlineDTO(
+                        name="Car classifier",
+                        image="registry.example.com/car-classifier:latest",
+                        command="python classify.py"))),
+        ]),
+    ))).unwrap()
+    await client.link_service_to_observatory(OBSERVATORY_ID, service.service_id)
+
+(Import used: import jub.enums as ENUM)
+
+
+##########################################################################
+SECTION J — SCRIPT 12: REVIEW AND PUBLISH (2 frames)
+##########################################################################
+
+J.1 Frame "Review everything linked"
+code:
+
+    observatory = (await client.get_observatory(OBSERVATORY_ID)).unwrap()
+    catalogs = (await client.list_observatory_catalogs(OBSERVATORY_ID)).unwrap()
+    products = (await client.list_observatory_products(OBSERVATORY_ID)).unwrap()
+    sources  = (await client.list_observatory_datasources(OBSERVATORY_ID)).unwrap()
+    services = (await client.list_observatory_services(OBSERVATORY_ID)).unwrap()
+
+OUTPUT (shortened):
+    Cars (invitado)
+    Catalogs (4): Car brands, Car colors, Model years, Countries
+    Products (8): ...
+    Data sources (1): Car sales (invitado)
+    Services (1): car-photo-classifier-invitado
+
+J.2 Frame "Publish: complete the setup task"
+bullets:
+- (!) Completing the setup task with success=True publishes it
+- Only a user linked to the observatory can complete it
+- A task completes once (a second call returns 409)
+code:
+
+    tasks = (await client.list_my_tasks()).unwrap()
+    setup = next(t for t in tasks
+                 if t.observatory_id == OBSERVATORY_ID
+                 and t.operation == "setup")
+    if setup.current_status == "pending":
+        done = (await client.complete_task(
+            setup.task_id, DTO.TaskCompleteDTO(success=True))).unwrap()
+        print(done.observatory_enabled)    # True -> visible in search
+
+OUTPUT:
+    Observatory published: True
+
+
+##########################################################################
+SECTION K — WRAP-UP (3 frames)
+##########################################################################
+
+K.1 Frame "The lifecycle" — TABLE B.7 (or a TikZ timeline 03 -> 12)
+
+K.2 Frame "Remember" — bullets (max 4 per frame; split in 2 frames if needed)
+- Every call returns Ok/Err: unwrap or check
+- Catalog items: the shared language of tags, search and data
+- (!) Tag products, or they cannot be found
+- Search with observatory_id and CATALOG.VALUE
+- Uploads run in the background: poll, or use wait_uploads
+- (!) Observatories start disabled; complete_task publishes them
+- Ids carry the username: to run everything again, use a new user
+
+K.3 Frame "Questions?"
+- examples/client/README.md    run order and search tips
+- examples/client/advanced/    bulk operations, charts (VO, BY), more DSL
+- API docs: http://localhost:5000/docs
